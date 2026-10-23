@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "ES2019", "module": "CommonJS", "moduleResolution": "node",
+    "lib": ["DOM", "DOM.Iterable", "ES2020"], "strict": true,
+    "esModuleInterop": true, "skipLibCheck": true, "declaration": true,
+    "outDir": "dist", "rootDir": "src", "types": []
+  },
+  "include": ["src/**/*.ts"]
+}

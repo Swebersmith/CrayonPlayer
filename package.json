@@ -1,0 +1,19 @@
+{
+  "name": "@swebersmith/luna-player",
+  "version": "0.1.0",
+  "description": "Standalone ArtPlayer/HLS player extracted from LunaTV, with casting and touch gestures",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "src", "LICENSE", "NOTICE.md"],
+  "license": "CC-BY-NC-SA-4.0",
+  "repository": { "type": "git", "url": "https://github.com/Swebersmith/LunaPlayer.git" },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -p tsconfig.json",
+    "build:demo": "vite build",
+    "test": "jest --runInBand",
+    "check": "npm run build && npm test && npm run build:demo"
+  },
+  "dependencies": { "artplayer": "5.2.5", "hls.js": "1.6.16" },
+  "devDependencies": { "@types/jest": "^27.5.2", "jest": "27.5.1", "typescript": "4.9.5", "vite": "^5.4.21" }
+}
