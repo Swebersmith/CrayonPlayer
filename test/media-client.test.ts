@@ -57,7 +57,19 @@ it.each([
   expect(failure).toBeInstanceOf(MediaPreparationError);
   expect((failure as MediaPreparationError).browserFallback).toBe(fallback);
   expect(mediaPreparationNotice(failure)).toContain(message);
-  expect(mediaPreparationNotice(failure,true)).toContain('浏览器过滤');
+  expect(mediaPreparationNotice(failure,true)).toContain('Crayon 本地过滤');
+});
+
+it('times out stalled preparation and permits local Crayon filtering',async()=>{
+  jest.useFakeTimers();
+  try{
+    jest.mocked(global.fetch).mockImplementationOnce((_url,init)=>new Promise((_resolve,reject)=>{
+      init!.signal!.addEventListener('abort',()=>reject(new Error('aborted')));
+    }));
+    const waiting=expect(createMediaPreparer()('https://media.example/slow.m3u8',true)).rejects.toMatchObject({code:'SERVICE_TIMEOUT',browserFallback:true});
+    jest.advanceTimersByTime(20000);
+    await waiting;
+  }finally{jest.useRealTimers();}
 });
 
 it('handles network errors and old plain-text relay failures without exposing provider HTML',async()=>{

@@ -2,7 +2,7 @@ import Hls from 'hls.js';
 
 import { MediaPreparationError } from '../src/media-client';
 import { adFixture } from './__fixtures__/vod-playlist';
-import { attachVodHls, setHlsAlternative, vodSourceTime } from '../src/vod-playback';
+import { attachVodHls, attachVodRecovery, setHlsAlternative, vodSourceTime } from '../src/vod-playback';
 
 const original = 'https://media.example/episode.m3u8';
 const filtered = 'https://tv.example/api/player/media?token=filtered';
@@ -18,29 +18,30 @@ beforeEach(() => {
 afterEach(() => { video.hls?.destroy(); jest.restoreAllMocks(); });
 const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
 
-it.each([true, false])('uses only the prepared playlist on native-capable iPad even with MSE supported=%s', async mse => {
-  jest.spyOn(Hls, 'isSupported').mockReturnValue(mse);
-  jest.spyOn(video, 'canPlayType').mockReturnValue('probably');
+it.each([true, false])('uses Crayon MSE/MMS without a native alternative when native HLS is available=%s', async native => {
+  jest.spyOn(video, 'canPlayType').mockReturnValue(native ? 'probably' : '');
   video.src = original;
   const rawSource = document.createElement('source'); rawSource.src = original; video.appendChild(rawSource);
   const applied = jest.fn();
   const prepare = jest.fn(async () => ({ url: filtered, filter }));
-  expect(attachVodHls(video, original, jest.fn(), true, applied, prepare)).toBeNull();
+  expect(attachVodHls(video, original, jest.fn(), true, applied, prepare)).toBe(video.hls);
   expect(video.hasAttribute('src')).toBe(false);
   expect(video.querySelector('source')).toBeNull();
   expect(video.vodNativePending).toBe(true);
   await flush();
-  expect(video.src).toBe(filtered);
-  expect(Array.from(video.querySelectorAll('source')).map(source => source.src)).toEqual([filtered]);
+  expect(video.src).toBe('');
+  expect(video.querySelector('source')).toBeNull();
   expect(video.vodPlaybackUrl).toBe(filtered);
   expect(video.vodNativePending).toBe(false);
-  expect(Hls.prototype.attachMedia).not.toHaveBeenCalled();
+  expect(Hls.prototype.loadSource).toHaveBeenCalledWith(filtered);
+  expect(Hls.prototype.attachMedia).toHaveBeenCalledWith(video);
+  expect(video.disableRemotePlayback).toBe(true);
   expect(applied).toHaveBeenCalledWith(filter);
   video.currentTime = 40;
   expect(vodSourceTime(video)).toBe(50);
 });
 
-it('feeds the same filtered URL to MSE and its native alternative without double filtering the timeline', async () => {
+it('feeds the filtered URL only to MSE without double filtering the timeline', async () => {
   const applied = jest.fn();
   const hls = attachVodHls(video, original, jest.fn(), true, applied, async () => ({ url: filtered, filter }));
   expect(hls).not.toBeNull();
@@ -49,7 +50,7 @@ it('feeds the same filtered URL to MSE and its native alternative without double
   expect(Hls.prototype.loadSource).toHaveBeenCalledTimes(1);
   expect(Hls.prototype.loadSource).toHaveBeenCalledWith(filtered);
   expect(hls!.config.loader).toBe(Hls.DefaultConfig.loader);
-  expect(video.querySelector('source')!.src).toBe(filtered);
+  expect(video.querySelector('source')).toBeNull();
   expect(video.vodAdFilter).toBe(filter);
   expect(applied).toHaveBeenCalledTimes(1);
 });
@@ -64,7 +65,7 @@ it('preserves the ManagedMediaSource blob when updating the HTTP fallback', () =
   expect(video.disableRemotePlayback).toBe(false);
 });
 
-it('keeps native playback stopped when preparation fails, even if MSE is also available', async () => {
+it('keeps a native-capable phone in Crayon when server preparation fails', async () => {
   jest.spyOn(video, 'canPlayType').mockReturnValue('maybe');
   const failed = jest.fn();
   attachVodHls(video, original, jest.fn(), true, undefined, async () => { throw new Error('offline'); }, failed);
@@ -72,7 +73,23 @@ it('keeps native playback stopped when preparation fails, even if MSE is also av
   expect(failed).toHaveBeenCalledTimes(1);
   expect(video.hasAttribute('src')).toBe(false);
   expect(video.querySelector('source')).toBeNull();
-  expect(Hls.prototype.loadSource).not.toHaveBeenCalled();
+  expect(failed).toHaveBeenCalledWith(expect.any(Error),true);
+  expect(Hls.prototype.loadSource).toHaveBeenCalledWith(original);
+  expect(video.hls!.config.loader).not.toBe(Hls.DefaultConfig.loader);
+  expect(video.disableRemotePlayback).toBe(true);
+});
+
+it.each(['probably',''])('reports unsupported MSE without preparing or handing off to native HLS: %s',native=>{
+  jest.spyOn(Hls,'isSupported').mockReturnValue(false);
+  jest.spyOn(video,'canPlayType').mockReturnValue(native as CanPlayTypeResult);
+  const unsupported=jest.fn(), prepare=jest.fn();
+  expect(attachVodHls(video,original,unsupported,true,undefined,prepare)).toBeNull();
+  expect(unsupported).toHaveBeenCalledTimes(1);
+  expect(prepare).not.toHaveBeenCalled();
+  expect(video.vodNativePending).toBe(false);
+  expect(video.vodNativeRequest).toBeUndefined();
+  expect(video.hasAttribute('src')).toBe(false);
+  expect(video.querySelector('source')).toBeNull();
 });
 
 it('recovers from a relay failure using the real HLS playlist parser with browser-side filtering and no raw native alternative', async () => {
@@ -137,6 +154,45 @@ it('keeps ads only when explicitly disabled and never prepares the raw playback'
   jest.spyOn(video, 'canPlayType').mockReturnValue('maybe');
   const prepare = jest.fn();
   attachVodHls(video, original, jest.fn(), false, undefined, prepare);
-  expect(video.src).toBe(original);
+  expect(video.src).toBe('');
+  expect(video.querySelector('source')).toBeNull();
+  expect(Hls.prototype.loadSource).toHaveBeenCalledWith(original);
   expect(prepare).not.toHaveBeenCalled();
+});
+
+it('attaches the real HLS ManagedMediaSource as the only source and keeps inline controls',()=>{
+  class ManagedSource extends EventTarget { readyState='closed'; sourceBuffers=[]; }
+  const saved=Object.getOwnPropertyDescriptor(window,'ManagedMediaSource');
+  Object.defineProperty(window,'ManagedMediaSource',{value:ManagedSource,configurable:true});
+  const oldCreate=URL.createObjectURL, oldRevoke=URL.revokeObjectURL;
+  URL.createObjectURL=jest.fn(()=>'blob:crayon-mms');URL.revokeObjectURL=jest.fn();
+  jest.mocked(Hls.prototype.attachMedia).mockRestore();
+  video.controls=true;
+  try{
+    attachVodHls(video,original,jest.fn(),false);
+    expect(video.querySelector('source')!.src).toBe('blob:crayon-mms');
+    expect(video.querySelectorAll('source')).toHaveLength(1);
+    expect(video.hasAttribute('src')).toBe(false);
+    expect(video.disableRemotePlayback).toBe(true);
+    expect(video.controls).toBe(false);
+    expect(video.playsInline).toBe(true);
+    expect(video.hasAttribute('webkit-playsinline')).toBe(true);
+  }finally{
+    video.hls?.destroy();
+    if(saved)Object.defineProperty(window,'ManagedMediaSource',saved);else delete (window as any).ManagedMediaSource;
+    URL.createObjectURL=oldCreate;URL.revokeObjectURL=oldRevoke;
+  }
+});
+
+it('stops repeated fatal network recovery and reports failure without native handoff',()=>{
+  const hls=attachVodHls(video,original,jest.fn(),false)!;
+  const start=jest.spyOn(hls,'startLoad').mockImplementation(()=>undefined);
+  const failed=jest.fn(), destroyed=jest.spyOn(hls,'destroy');
+  attachVodRecovery(hls,failed);
+  for(let i=0;i<4;i++)hls.trigger(Hls.Events.ERROR,{fatal:true,type:Hls.ErrorTypes.NETWORK_ERROR,details:Hls.ErrorDetails.MANIFEST_LOAD_ERROR,error:new Error('unavailable')} as any);
+  expect(start).toHaveBeenCalledTimes(3);
+  expect(destroyed).toHaveBeenCalledTimes(1);
+  expect(failed).toHaveBeenCalledTimes(1);
+  expect(video.hls).toBeUndefined();
+  expect(video.querySelector('source')).toBeNull();
 });

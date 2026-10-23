@@ -16,8 +16,8 @@ function load() {
     prepareMedia: __CRAYON_PREPARE_ENDPOINT__ || undefined,
   });
   status.textContent = __CRAYON_PREPARE_ENDPOINT__
-    ? '视频已载入；原生播放和投屏均使用服务端去广告清单。点击播放开始观看。'
-    : '视频已载入；点击播放。当前为静态模式，原生播放和投屏去广告需要配套清单服务。';
+    ? 'Crayon 已载入视频，点击播放开始观看；本地和投屏均已接入去广告服务。'
+    : 'Crayon 已载入视频，点击播放。当前为静态模式，投屏去广告需要配套清单服务。';
 }
 document.querySelector('#source-form')!.addEventListener('submit', event => {
   event.preventDefault();

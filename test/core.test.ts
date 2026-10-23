@@ -14,7 +14,8 @@ it('preserves host playback configuration and installs gestures/casting once', (
   createCrayonPlayerCore({
     container: '#player', url: 'https://media.example/episode.m3u8',
     customType, settings, controls: [{ click: next }], plugins: [hostPlugin],
-    gesture: true, fastForward: true, pip: true,
+    gesture: true, fastForward: true, pip: true, playsInline:false, fullscreen:true,
+    moreVideoAttr:{controls:true,crossOrigin:'anonymous'},
   }, enhancements);
   const options = construct.mock.calls[0][0];
   expect(options.customType).toBe(customType);
@@ -26,6 +27,10 @@ it('preserves host playback configuration and installs gestures/casting once', (
   expect(options.gesture).toBe(false);
   expect(options.fastForward).toBe(false);
   expect(options.pip).toBe(true);
+  expect(options.playsInline).toBe(true);
+  expect(options.fullscreen).toBe(false);
+  expect(options.fullscreenWeb).toBe(true);
+  expect(options.moreVideoAttr).toMatchObject({controls:false,playsInline:true,crossOrigin:'anonymous'});
   expect(pluginFactory).toHaveBeenCalledTimes(1);
   expect(pluginFactory).toHaveBeenCalledWith(enhancements);
 });
