@@ -19,6 +19,7 @@ beforeEach(() => {
   jest.spyOn(Hls, 'isSupported').mockReturnValue(true);
   // jsdom has no MediaSource; keep the real HLS playlist parser and loaders.
   jest.spyOn(Hls.prototype, 'attachMedia').mockImplementation(() => undefined);
+  jest.spyOn(video, 'load').mockImplementation(() => undefined);
 });
 
 afterEach(() => {
