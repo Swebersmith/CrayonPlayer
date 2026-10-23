@@ -1,19 +1,40 @@
 {
   "name": "@swebersmith/crayon-player",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Crayon Player: a customizable HTML5 video player with casting and touch gestures",
-  "main": "dist/index.js",
+  "main": "dist/crayon-player.cjs",
+  "module": "dist/crayon-player.mjs",
   "types": "dist/index.d.ts",
-  "files": ["dist", "src", "LICENSE", "NOTICE.md"],
+  "unpkg": "dist/crayon-player.iife.js",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/crayon-player.mjs", "require": "./dist/crayon-player.cjs" },
+    "./server": { "types": "./dist/server.d.ts", "import": "./dist/server.mjs", "require": "./dist/server.cjs" },
+    "./browser": "./dist/crayon-player.iife.js",
+    "./package.json": "./package.json"
+  },
+  "typesVersions": { "*": { "server": ["dist/server.d.ts"] } },
+  "engines": { "node": ">=22" },
+  "files": ["dist", "src", "LICENSE", "NOTICE.md", "THIRD_PARTY_LICENSES"],
   "license": "CC-BY-NC-SA-4.0",
   "repository": { "type": "git", "url": "https://github.com/Swebersmith/CrayonPlayer.git" },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/build.mjs",
     "build:demo": "vite build",
+    "build:hosted": "vite build --mode hosted",
+    "preview": "vite preview --host 127.0.0.1",
+    "dev:hosted": "npm run build:hosted && wrangler dev",
+    "deploy": "npm run build:hosted && wrangler deploy",
+    "deploy:check": "npm run build:hosted && wrangler deploy --dry-run --outdir .wrangler/dry-run",
+    "worker:types": "wrangler types examples/cloudflare/worker-configuration.d.ts --include-runtime=false",
+    "package:check": "node scripts/check-package.mjs",
+    "release:pack": "node scripts/release.mjs",
+    "release": "npm run check && npm run release:pack",
+    "prepare": "npm run build",
+    "prepack": "npm run build",
     "test": "jest --runInBand",
-    "check": "npm run build && npm test && npm run build:demo"
+    "check": "npm run build && npm test && npm run build:demo && npm run package:check"
   },
   "dependencies": { "artplayer": "5.2.5", "hls.js": "1.6.16" },
-  "devDependencies": { "@types/jest": "^27.5.2", "jest": "27.5.1", "typescript": "4.9.5", "vite": "^5.4.21" }
+  "devDependencies": { "@types/jest": "^27.5.2", "jest": "27.5.1", "typescript": "4.9.5", "vite": "^5.4.21", "wrangler": "4.152.0" }
 }

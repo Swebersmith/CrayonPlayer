@@ -1,0 +1,44 @@
+import { createMediaPreparer } from '../src/media-client';
+
+const result = {url:'https://tv.example/api/player/media?token=clean',type:'application/vnd.apple.mpegurl',filter:{playlist:'',originalDuration:100,removed:[{start:30,end:40}],reason:'filtered'},expiresAt:Date.now()+8*3600000};
+const originalFetch = global.fetch;
+beforeEach(() => { global.fetch = jest.fn(async () => ({ok:true,json:async()=>result})) as jest.Mock; });
+afterEach(() => { global.fetch=originalFetch; jest.restoreAllMocks(); });
+
+it('shares one authenticated preparation between playback and casting and separates ad preferences',async()=>{
+  const prepare = createMediaPreparer();
+  const first = prepare('https://media.example/1.m3u8',true);
+  expect(prepare('https://media.example/1.m3u8',true)).toBe(first);
+  await expect(first).resolves.toEqual(result);
+  expect(global.fetch).toHaveBeenCalledTimes(1);
+  expect(global.fetch).toHaveBeenCalledWith('/api/player/prepare',expect.objectContaining({method:'POST',credentials:'same-origin',body:JSON.stringify({url:'https://media.example/1.m3u8',blockAds:true})}));
+  await prepare('https://media.example/1.m3u8',false);
+  expect(global.fetch).toHaveBeenCalledTimes(2);
+});
+it('evicts failures and expiring links so a fresh login or preparation can retry',async()=>{
+  const prepare = createMediaPreparer();
+  jest.mocked(global.fetch).mockResolvedValueOnce({ok:false} as Response);
+  await expect(prepare('https://media.example/1.m3u8',true)).rejects.toThrow('登录');
+  await expect(prepare('https://media.example/1.m3u8',true)).resolves.toEqual(result);
+  jest.spyOn(Date,'now').mockReturnValue(Date.now()+31*60000);
+  await prepare('https://media.example/1.m3u8',true);
+  expect(global.fetch).toHaveBeenCalledTimes(3);
+});
+it.each(['javascript:alert(1)','blob:private'])('rejects a non-HTTP media URL: %s',async url=>{
+  jest.mocked(global.fetch).mockResolvedValue({ok:true,json:async()=>({...result,url})} as Response);
+  await expect(createMediaPreparer()('https://media.example/1.m3u8',true)).rejects.toThrow('无效');
+});
+it('bounds the cache while browsing episodes',async()=>{
+  const prepare = createMediaPreparer();
+  for(let i=0;i<13;i++) await prepare(`https://media.example/${i}.m3u8`,true);
+  await prepare('https://media.example/0.m3u8',true);
+  expect(global.fetch).toHaveBeenCalledTimes(14);
+});
+it.each([
+  {...result,url:undefined},
+  {...result,filter:{...result.filter,removed:[{start:40,end:30}]}},
+  {...result,expiresAt:Date.now()-1},
+])('rejects incomplete, unsafe timeline or expired service responses',async response=>{
+  jest.mocked(global.fetch).mockResolvedValue({ok:true,json:async()=>response} as Response);
+  await expect(createMediaPreparer()('https://media.example/1.m3u8',true)).rejects.toThrow();
+});

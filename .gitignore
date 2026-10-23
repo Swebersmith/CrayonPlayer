@@ -5,3 +5,10 @@ coverage/
 .env*
 *.log
 .DS_Store
+.wrangler/
+.package-check/
+.npm-cache/
+.dev.vars*
+*.tgz
+release/
+examples/cloudflare/worker-configuration.d.ts

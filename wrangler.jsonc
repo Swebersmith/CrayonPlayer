@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "crayon-player",
+  "main": "examples/cloudflare/worker.mjs",
+  "compatibility_date": "2026-10-23",
+  "assets": { "directory": "./demo-dist", "binding": "ASSETS", "run_worker_first": true },
+  "secrets": { "required": ["MEDIA_SECRET", "VIEWER_PASSWORD"] },
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.01 }
+  }
+}
