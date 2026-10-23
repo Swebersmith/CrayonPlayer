@@ -16,6 +16,8 @@ it('renders a manual volume submenu in real ArtPlayer and closes it with control
     await new Promise(resolve=>setTimeout(resolve,0));
     const input = container.querySelector<HTMLInputElement>('[aria-label="播放音量"]')!;
     expect(input).not.toBeNull();
+    expect(art.template.$player.style.getPropertyValue('--art-settings-max-height')).toContain('100% - 56px');
+    expect(input.style.height).toBe('24px');
     input.value = '35'; input.dispatchEvent(new Event('input',{bubbles:true}));
     expect(art.volume).toBe(.35);
     art.controls.show = false;
