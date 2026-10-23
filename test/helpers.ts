@@ -3,19 +3,21 @@ import type Artplayer from 'artplayer';
 export function fakeArt() {
   const root = document.createElement('div');
   const video = document.createElement('video');
-  root.appendChild(video);
+  const progress = document.createElement('div');
+  root.append(video, progress);
   document.body.appendChild(root);
   video.getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 200, right: 400, bottom: 200, x: 0, y: 0, toJSON() {} });
+  progress.getBoundingClientRect = () => ({ left: 20, top: 180, width: 360, height: 20, right: 380, bottom: 200, x: 20, y: 180, toJSON() {} });
   const events: Record<string, Function[]> = {};
   let time = 50;
   const art = {
-    template: { $player: root }, video,
+    template: { $player: root, $progress: progress }, video,
     option: { url: 'https://media.example/1.m3u8', isLive: false },
     isLock: false, isRotate: false, isDestroy: false, paused: false,
     get playing() { return !this.paused; },
     duration: 100, playbackRate: 1.25, muted: false, title: 'Demo',
     get currentTime() { return time; }, set currentTime(value: number) { time = value; },
-    set seek(value: number) { time = value; },
+    set seek(value: number) { time = value; art.emit('seek',value); },
     get volume() { return video.volume; }, set volume(value: number) { video.volume = value; },
     notice: { show: '' }, pause: jest.fn(),
     toggle: jest.fn(() => { art.paused = !art.paused; }),

@@ -18,8 +18,9 @@ it('preserves host playback configuration and installs gestures/casting once', (
   }, enhancements);
   const options = construct.mock.calls[0][0];
   expect(options.customType).toBe(customType);
-  expect(options.settings.slice(1)).toEqual(settings);
+  expect(options.settings.slice(2)).toEqual(settings);
   expect(options.settings[0]).toEqual(expect.objectContaining({ name: 'crayonVolume' }));
+  expect(options.settings[1]).toEqual(expect.objectContaining({ name: 'crayonMiniProgress' }));
   expect(options.controls[0].click).toBe(next);
   expect(options.plugins).toEqual([hostPlugin, plugin]);
   expect(options.gesture).toBe(false);
