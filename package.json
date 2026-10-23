@@ -1,12 +1,12 @@
 {
-  "name": "@swebersmith/luna-player",
+  "name": "@swebersmith/crayon-player",
   "version": "0.1.0",
-  "description": "Standalone ArtPlayer/HLS player extracted from LunaTV, with casting and touch gestures",
+  "description": "Crayon Player: a customizable HTML5 video player with casting and touch gestures",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": ["dist", "src", "LICENSE", "NOTICE.md"],
   "license": "CC-BY-NC-SA-4.0",
-  "repository": { "type": "git", "url": "https://github.com/Swebersmith/LunaPlayer.git" },
+  "repository": { "type": "git", "url": "https://github.com/Swebersmith/CrayonPlayer.git" },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -p tsconfig.json",

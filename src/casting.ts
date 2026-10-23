@@ -131,7 +131,7 @@ export function attachCasting(art: Artplayer, options: CastOptions) {
       const type = source.type || (/\.m3u8(?:[?#]|$)/i.test(url.href) ? 'application/x-mpegURL' : 'video/mp4');
       const media = new chrome.media.MediaInfo(url.href, type);
       const metadata = new chrome.media.GenericMediaMetadata();
-      metadata.title = source.title || art.title || 'Luna Player';
+      metadata.title = source.title || art.title || 'Crayon Player';
       media.metadata = metadata;
       const request = new chrome.media.LoadRequest(media);
       request.currentTime = Math.max(0, source.currentTime ?? art.currentTime);
@@ -160,7 +160,7 @@ export function attachCasting(art: Artplayer, options: CastOptions) {
     trigger.setAttribute('aria-expanded', String(!panel.hidden));
     if (!panel.hidden) native.focus();
   };
-  art.controls.add({ name: 'lunaCast', position: 'right', index: 18, html: trigger, tooltip: '投屏' });
+  art.controls.add({ name: 'crayonCast', position: 'right', index: 18, html: trigger, tooltip: '投屏' });
   const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !panel.hidden) { close(); trigger.focus(); } };
   const outside = (event: Event) => { if (!panel.contains(event.target as Node) && !trigger.contains(event.target as Node)) close(); };
   const sourceChanged = () => { generation++; close(); };
@@ -174,6 +174,6 @@ export function attachCasting(art: Artplayer, options: CastOptions) {
     document.removeEventListener('click', outside);
     video.removeEventListener('loadstart', sourceChanged);
     panel.remove();
-    art.controls.remove('lunaCast');
+    art.controls.remove('crayonCast');
   };
 }

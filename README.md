@@ -1,6 +1,6 @@
-# Luna Player
+# Crayon Player
 
-从 [LunaTV](https://github.com/Swebersmith/LunaTV) 内置播放器拆出的独立 TypeScript 播放器，基于 ArtPlayer 5.2.5 和 HLS.js。无需 Next.js、React、数据库或影视站后台。
+Crayon Player 是支持投屏、触屏手势和 HLS 的可嵌入 TypeScript 视频播放器。可独立运行，也可接入现有视频网站，无需 React、数据库或后台服务。
 
 ## 启动示例
 
@@ -26,13 +26,13 @@ npm run dev
 先 `npm run build`，在自己的前端项目中通过本地路径安装此仓库：
 
 ```sh
-npm install /path/to/LunaPlayer
+npm install /path/to/CrayonPlayer
 ```
 
 ```ts
-import { createLunaPlayer } from '@swebersmith/luna-player';
+import { createCrayonPlayer } from '@swebersmith/crayon-player';
 
-const player = createLunaPlayer({
+const player = createCrayonPlayer({
   container: '#player', // 容器需显式高度，例如 aspect-ratio: 16/9
   url: 'https://your-media.example/movie.m3u8',
   title: '我的视频',
@@ -47,14 +47,16 @@ player.destroy();
 
 已有 ArtPlayer 项目可以只使用插件，保留自己的 HLS、记录、片头片尾、选集等实现：
 
+如需统一的 Crayon Player 标识和初始化入口，可调用 `createCrayonPlayerCore(artplayerOptions, enhancements)`；该入口保留传入的 HLS 加载器、设置和控制按钮，统一安装投屏与手势，用于与现有视频网站集成。
+
 ```ts
 import Artplayer from 'artplayer';
-import { lunaPlayerPlugin, vodSourceTime } from '@swebersmith/luna-player';
+import { crayonPlayerPlugin, vodSourceTime } from '@swebersmith/crayon-player';
 
 new Artplayer({
   container: '#player', url: mediaUrl,
   gesture: false, fastForward: false,
-  plugins: [lunaPlayerPlugin({
+  plugins: [crayonPlayerPlugin({
     gestures: { seekSeconds: 10, holdDelay: 500, holdRate: 2 },
     casting: {
       getSource: () => ({ url: currentMediaUrl, title: currentTitle,
@@ -74,7 +76,7 @@ new Artplayer({
 
 实现参考 [Google Cast Web Sender 官方文档](https://developers.google.com/cast/docs/web_sender/integrate)、[Remote Playback API](https://developer.mozilla.org/en-US/docs/Web/API/RemotePlayback/prompt) 和 [Apple 播放设备选择接口](https://developer.apple.com/documentation/webkitjs/htmlmediaelement/1632172-webkitshowplaybacktargetpicker)。
 
-## 验证与来源
+## 验证
 
 ```sh
 npm run check
@@ -84,6 +86,6 @@ npm run check
 
 `docs/ci-example.yml` 提供 GitHub Actions 配置示例。当前上传凭据没有 `workflow` 权限，因此未启用远程 Actions；拥有该权限后可将示例复制到 `.github/workflows/check.yml`。
 
-网站使用 `packages/luna-player/src` 中的相同源文件。修改独立仓库后，在网站目录运行 `node scripts/sync-luna-player.mjs` 同步，避免网站和独立包行为分叉。
+网站使用 `packages/crayon-player/src` 中的相同源文件。修改独立仓库后，在网站目录运行 `node scripts/sync-crayon-player.mjs` 同步，避免网站和独立包行为分叉。
 
 沿用原项目 CC BY-NC-SA 4.0，详见 [LICENSE](LICENSE) 和 [NOTICE.md](NOTICE.md)。

@@ -1,14 +1,17 @@
 import Artplayer from 'artplayer';
 import Hls from 'hls.js';
 
-import { EnhancementOptions, lunaPlayerPlugin } from './plugin';
+import { createCrayonPlayerCore } from './core';
+import { EnhancementOptions } from './plugin';
 import { attachVodHls, vodFilteredTime, vodSourceDuration, vodSourceTime } from './vod-playback';
 
 export { attachGestures } from './gestures';
 export type { GestureOptions } from './gestures';
 export { attachCasting, prepareCastSdk } from './casting';
 export type { CastOptions } from './casting';
-export { lunaPlayerPlugin } from './plugin';
+export { crayonPlayerPlugin } from './plugin';
+export { createCrayonPlayerCore } from './core';
+export type { CrayonPlayerCoreOptions } from './core';
 export type { EnhancementOptions } from './plugin';
 export { attachVodHls, vodFilteredTime, vodSourceDuration, vodSourceTime } from './vod-playback';
 export { filterAdsFromM3U8, vodAdLoader } from './vod-ad-filter';
@@ -16,7 +19,7 @@ export { filterVodAdSegments } from './vod-segment-filter';
 export type { VodAdFilterResult, VodAdRange } from './vod-segment-filter';
 
 type ArtOptions = ConstructorParameters<typeof Artplayer>[0];
-export interface LunaPlayerOptions {
+export interface CrayonPlayerOptions {
   container: string | HTMLDivElement;
   url: string;
   title?: string;
@@ -32,11 +35,8 @@ export interface LunaPlayerOptions {
   artplayer?: Partial<ArtOptions>;
 }
 
-/** Standalone VOD player. Host applications can also install just lunaPlayerPlugin. */
-export function createLunaPlayer(options: LunaPlayerOptions): Artplayer {
-  Artplayer.PLAYBACK_RATE = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
-  Artplayer.USE_RAF = false;
-  Artplayer.FULLSCREEN_WEB_IN_BODY = true;
+/** Standalone VOD player. Host applications can also install just crayonPlayerPlugin. */
+export function createCrayonPlayer(options: CrayonPlayerOptions): Artplayer {
   let art: Artplayer;
   let destroyed = false;
   let blocked = options.blockAds !== false;
@@ -84,26 +84,14 @@ export function createLunaPlayer(options: LunaPlayerOptions): Artplayer {
     if (options.onNext) options.onNext();
     else art.pause();
   };
-  art = new Artplayer({
+  art = createCrayonPlayerCore({
     container: options.container, url: options.url,
     poster: options.poster || '', autoplay: options.autoplay ?? false, volume: 0.7,
     pip: true, setting: true, playbackRate: true, fullscreen: true,
     fullscreenWeb: true, airplay: true, playsInline: true, lock: true,
     autoOrientation: true, theme: '#22c55e', lang: 'zh-cn',
     ...options.artplayer,
-    // These gestures are supplied by our plugin instead of ArtPlayer's overlapping handlers.
-    gesture: false, fastForward: false,
     customType: { m3u8: hlsType, ...options.artplayer?.customType },
-    plugins: [
-      ...(options.artplayer?.plugins || []),
-      lunaPlayerPlugin({
-        ...options.enhancements,
-        casting: options.enhancements?.casting === false ? false : {
-          getSource: () => ({ url: sourceUrl(), title: art.title, currentTime: vodSourceTime(art.video) }),
-          ...options.enhancements?.casting,
-        },
-      }),
-    ],
     settings: [
       { name: 'blockAds', html: '去广告', tooltip: blocked ? '已开启' : '已关闭', onClick() {
         if (!Hls.isSupported()) return '原生播放模式不支持分片过滤';
@@ -123,6 +111,12 @@ export function createLunaPlayer(options: LunaPlayerOptions): Artplayer {
       ...(options.onNext ? [{ name: 'nextEpisode', html: '下一集', position: 'left' as const, index: 13, click: next }] : []),
       ...(options.artplayer?.controls || []),
     ],
+  }, {
+    ...options.enhancements,
+    casting: options.enhancements?.casting === false ? false : {
+      getSource: () => ({ url: sourceUrl(), title: art.title, currentTime: vodSourceTime(art.video) }),
+      ...options.enhancements?.casting,
+    },
   });
   function save() {
     if (destroyed || !Number.isFinite(art.currentTime)) return;

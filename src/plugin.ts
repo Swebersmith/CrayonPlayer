@@ -9,7 +9,7 @@ export interface EnhancementOptions {
 }
 
 /** ArtPlayer plugin; install with fastForward:false and gesture:false to avoid duplicate gestures. */
-export function lunaPlayerPlugin(options: EnhancementOptions = {}) {
+export function crayonPlayerPlugin(options: EnhancementOptions = {}) {
   return (art: Artplayer) => {
     const disposeGestures = options.gestures === false ? undefined : attachGestures(art, options.gestures);
     const disposeCast = options.casting ? attachCasting(art, options.casting) : undefined;
@@ -21,6 +21,6 @@ export function lunaPlayerPlugin(options: EnhancementOptions = {}) {
       disposeCast?.();
     };
     art.on('destroy', destroy);
-    return { name: 'lunaPlayer', destroy };
+    return { name: 'crayonPlayer', destroy };
   };
 }
