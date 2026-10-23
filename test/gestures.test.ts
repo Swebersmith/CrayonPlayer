@@ -45,16 +45,26 @@ it('does not slow down 3x playback, accelerate paused video, or leak rate on dis
   touch(art.video, 'touchstart', 350); jest.advanceTimersByTime(510);
   expect(art.playbackRate).toBe(3);
 });
-it('locks direction so volume/brightness swipes do not seek or accelerate', () => {
+it('locks direction, adjusts only the right-side volume, and leaves brightness alone', () => {
   touch(art.video, 'touchstart', 350); touch(art.video, 'touchmove', 352, 50);
   expect(art.volume).toBeGreaterThan(.5);
   expect(art.currentTime).toBe(50);
   jest.advanceTimersByTime(600); expect(art.playbackRate).toBe(1.25);
   touch(art.video, 'touchend', 352, 50);
   touch(art.video, 'touchstart', 50); touch(art.video, 'touchmove', 50, 150);
-  expect(art.video.style.filter).toContain('brightness(0.6875)');
+  expect(art.video.style.filter).toBe('');
   expect(art.currentTime).toBe(50);
   dispose(); expect(art.video.style.filter).toBe('');
+});
+it('double taps in the middle pause/resume without seeking and zone boundaries stay separate', () => {
+  tap(200); tap(200);
+  expect(art.toggle).toHaveBeenCalledTimes(1);
+  expect(art.currentTime).toBe(50);
+  tap(200); tap(200);
+  expect(art.toggle).toHaveBeenCalledTimes(2);
+  tap(130); tap(140);
+  expect(art.currentTime).toBe(50);
+  expect(art.toggle).toHaveBeenCalledTimes(2);
 });
 it('keeps horizontal seeking and ignores controls, lock and multiple fingers', () => {
   touch(art.video, 'touchstart', 150); touch(art.video, 'touchmove', 190, 100); touch(art.video, 'touchend', 190);

@@ -243,3 +243,26 @@ it('reports a browser with neither MSE nor native HLS support', () => {
   expect(video.hls).toBeUndefined();
   expect(video.hasAttribute('src')).toBe(false);
 });
+it('uses a server-filtered native source and exposes its original timeline metadata', async () => {
+  jest.spyOn(Hls,'isSupported').mockReturnValue(false);
+  jest.spyOn(video,'canPlayType').mockReturnValue('maybe');
+  const filter = {playlist:'',originalDuration:100,removed:[{start:30,end:40}],reason:'filtered' as const};
+  const onFilter = jest.fn();
+  attachVodHls(video,'https://media.test/original.m3u8',unsupported,true,onFilter,async()=>({url:'https://tv.test/api/player/media?token=native',filter}));
+  expect(video.src).toBe('');
+  expect(video.vodNativePending).toBe(true);
+  await Promise.resolve(); await Promise.resolve();
+  expect(video.src).toBe('https://tv.test/api/player/media?token=native');
+  expect(video.vodAdFilter).toBe(filter);
+  expect(onFilter).toHaveBeenCalledWith(filter);
+});
+it('does not load the old native preparation after switching or destroying the player', async () => {
+  jest.spyOn(Hls,'isSupported').mockReturnValue(false);
+  jest.spyOn(video,'canPlayType').mockReturnValue('maybe');
+  let finish!: (value:any)=>void;
+  attachVodHls(video,'https://media.test/old.m3u8',unsupported,true,undefined,()=>new Promise(resolve=>{finish=resolve;}));
+  delete video.vodNativeRequest;
+  finish({url:'https://tv.test/old',filter:{removed:[]}});
+  await Promise.resolve(); await Promise.resolve();
+  expect(video.src).toBe('');
+});

@@ -18,12 +18,14 @@ export function fakeArt() {
     set seek(value: number) { time = value; },
     get volume() { return video.volume; }, set volume(value: number) { video.volume = value; },
     notice: { show: '' }, pause: jest.fn(),
-    controls: { toggle: jest.fn(), remove: jest.fn(), add: jest.fn(option => { root.appendChild(option.html); }) },
+    toggle: jest.fn(() => { art.paused = !art.paused; }),
+    setting: { show: false, find: jest.fn(), update: jest.fn() },
+    controls: { show: true, toggle: jest.fn(() => { art.controls.show = !art.controls.show; art.emit('control',art.controls.show); }), remove: jest.fn(() => root.querySelector('[aria-label="投屏"]')?.remove()), add: jest.fn(option => { root.appendChild(option.html); }) },
     on(name: string, callback: Function) { (events[name] ||= []).push(callback); },
     off(name: string, callback: Function) { events[name] = (events[name] || []).filter(fn => fn !== callback); },
-    emit(name: string) { events[name]?.forEach(fn => fn()); },
+    emit(name: string, ...args: any[]) { events[name]?.forEach(fn => fn(...args)); },
   };
-  return art as unknown as Artplayer & { emit(name: string): void };
+  return art as unknown as Artplayer & { emit(name: string, ...args: any[]): void };
 }
 
 export function touch(target: EventTarget, type: string, x: number, y = 100, count = 1) {

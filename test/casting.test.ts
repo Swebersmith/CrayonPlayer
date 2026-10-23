@@ -71,3 +71,44 @@ it('supports keyboard close and cleans up UI', () => {
   expect(trigger.getAttribute('aria-expanded')).toBe('false');
   dispose(); expect(document.querySelector('[aria-label="投屏方式"]')).toBeNull();
 });
+it('prepares filtered media before the picker and converts progress to the receiver timeline', async () => {
+  dispose();
+  const preparedUrl = 'https://tv.example/api/player/media?token=limited';
+  const prepareSource = jest.fn(async () => ({ url:preparedUrl,type:'application/x-mpegURL',mapTime:(time:number)=>time-12.5 }));
+  dispose = attachCasting(art,{getSource:()=>source,prepareSource});
+  document.querySelector<HTMLButtonElement>('[aria-label="投屏"]')!.click();
+  await flush();
+  source.currentTime = 90;
+  button('Chromecast / Google Cast').click();
+  expect(context.requestSession).toHaveBeenCalledTimes(1);
+  await flush();
+  expect(load).toHaveBeenCalledWith(expect.objectContaining({currentTime:77.5,media:expect.objectContaining({contentId:preparedUrl})}));
+});
+it('never falls back to the unfiltered original while preparation is pending or failing', async () => {
+  dispose();
+  dispose = attachCasting(art,{getSource:()=>source,prepareSource:async()=>{throw new Error('unavailable');}});
+  button('Chromecast / Google Cast').click();
+  await flush();
+  expect(context.requestSession).not.toHaveBeenCalled();
+  expect(load).not.toHaveBeenCalled();
+});
+it('hides the casting menu when controls hide', () => {
+  document.querySelector<HTMLButtonElement>('[aria-label="投屏"]')!.click();
+  art.emit('control',false);
+  expect(document.querySelector<HTMLElement>('[aria-label="投屏方式"]')!.hidden).toBe(true);
+});
+it('switches AirPlay to the prepared native playlist instead of handing off the original', async () => {
+  dispose();
+  const picker = jest.fn(); (art.video as any).webkitShowPlaybackTargetPicker = picker;
+  jest.spyOn(art.video,'canPlayType').mockReturnValue('maybe');
+  const url = 'https://tv.example/api/player/media?token=airplay';
+  const filter = {playlist:'',originalDuration:100,removed:[{start:30,end:40}],reason:'filtered' as const};
+  dispose = attachCasting(art,{getSource:()=>source,prepareSource:async()=>({url,type:'application/x-mpegURL',filter,mapTime:time=>time-10})});
+  document.querySelector<HTMLButtonElement>('[aria-label="投屏"]')!.click(); await flush();
+  button('AirPlay / 系统投屏').click();
+  expect(picker).toHaveBeenCalledTimes(1);
+  expect(art.video.src).toBe(url);
+  expect(art.video.vodAdFilter).toBe(filter);
+  art.video.dispatchEvent(new Event('loadedmetadata'));
+  expect(art.currentTime).toBe(62);
+});
