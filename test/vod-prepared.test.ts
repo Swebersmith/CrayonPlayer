@@ -3,6 +3,7 @@ import Hls from 'hls.js';
 import { MediaPreparationError } from '../src/media-client';
 import { adFixture } from './__fixtures__/vod-playlist';
 import { attachVodHls, attachVodRecovery, setHlsAlternative, vodSourceTime } from '../src/vod-playback';
+import { filterVodAdSegments } from '../src/vod-segment-filter';
 
 const original = 'https://media.example/episode.m3u8';
 const filtered = 'https://tv.example/api/player/media?token=filtered';
@@ -65,17 +66,21 @@ it('preserves the ManagedMediaSource blob when updating the HTTP fallback', () =
   expect(video.disableRemotePlayback).toBe(false);
 });
 
-it('keeps a native-capable phone in Crayon when server preparation fails', async () => {
-  jest.spyOn(video, 'canPlayType').mockReturnValue('maybe');
+it.each([true,false])('stops playback on preparation failure without loading the original, native support=%s', async native => {
+  jest.spyOn(video, 'canPlayType').mockReturnValue(native?'maybe':'');
   const failed = jest.fn();
-  attachVodHls(video, original, jest.fn(), true, undefined, async () => { throw new Error('offline'); }, failed);
+  const error=new Error('offline');
+  const hls=attachVodHls(video, original, jest.fn(), true, undefined, async () => { throw error; }, failed)!;
+  const destroy=jest.spyOn(hls,'destroy');
   await flush();
   expect(failed).toHaveBeenCalledTimes(1);
   expect(video.hasAttribute('src')).toBe(false);
   expect(video.querySelector('source')).toBeNull();
-  expect(failed).toHaveBeenCalledWith(expect.any(Error),true);
-  expect(Hls.prototype.loadSource).toHaveBeenCalledWith(original);
-  expect(video.hls!.config.loader).not.toBe(Hls.DefaultConfig.loader);
+  expect(failed).toHaveBeenCalledWith(error);
+  expect(Hls.prototype.loadSource).not.toHaveBeenCalled();
+  expect(Hls.prototype.attachMedia).not.toHaveBeenCalled();
+  expect(destroy).toHaveBeenCalledTimes(1);
+  expect(video.hls).toBeUndefined();
   expect(video.disableRemotePlayback).toBe(true);
 });
 
@@ -92,22 +97,23 @@ it.each(['probably',''])('reports unsupported MSE without preparing or handing o
   expect(video.querySelector('source')).toBeNull();
 });
 
-it('recovers from a relay failure using the real HLS playlist parser with browser-side filtering and no raw native alternative', async () => {
+it('plays server-filtered media through the real HLS parser without changing the prepared timeline', async () => {
   const realLoadSource = Hls.prototype.loadSource;
   jest.mocked(realLoadSource).mockRestore();
-  const playlist = adFixture();
+  const preparedFilter=filterVodAdSegments(adFixture(),original);
   let details: {totalduration:number; fragments:{url:string}[]} | undefined;
   const transport = jest.spyOn(Hls.DefaultConfig.loader.prototype, 'load').mockImplementation(function(context, _config, callbacks) {
-    callbacks.onSuccess({url:context.url,data:playlist},this.stats,context,null);
+    callbacks.onSuccess({url:context.url,data:preparedFilter.playlist},this.stats,context,null);
   });
   const applied = jest.fn();
   const failed = jest.fn();
-  const error = new MediaPreparationError('片源清单读取超时',true,'UPSTREAM_TIMEOUT');
-  const hls = attachVodHls(video,original,jest.fn(),true,applied,async()=>{throw error;},failed)!;
+  const hls = attachVodHls(video,original,jest.fn(),true,applied,async()=>({url:filtered,filter:preparedFilter}),failed)!;
   hls.on(Hls.Events.LEVEL_LOADED, (_event,data)=>{details=data.details;});
   await flush();
-  expect(failed).toHaveBeenCalledWith(error,true);
-  expect(transport).toHaveBeenCalled();
+  expect(failed).not.toHaveBeenCalled();
+  expect(transport).toHaveBeenCalledTimes(1);
+  expect(transport.mock.calls[0][0].url).toBe(filtered);
+  expect(hls.config.loader).toBe(Hls.DefaultConfig.loader);
   expect(details!.totalduration).toBeCloseTo(288.288);
   expect(details!.fragments.every(fragment=>!fragment.url.includes('insert-'))).toBe(true);
   expect(applied).toHaveBeenCalledWith(expect.objectContaining({reason:'filtered',removed:[{start:144.144,end:156.644}]}));
@@ -118,14 +124,26 @@ it('recovers from a relay failure using the real HLS playlist parser with browse
 });
 
 it.each([
-  new MediaPreparationError('登录已失效',false,'UNAUTHORIZED'),
-  new MediaPreparationError('播放地址无效',false,'INVALID_REQUEST'),
-])('does not use browser fallback for denied or invalid preparation: %s', async error=>{
+  new MediaPreparationError('登录已失效','UNAUTHORIZED'),
+  new MediaPreparationError('播放地址无效','INVALID_REQUEST'),
+  new MediaPreparationError('片源读取超时','UPSTREAM_TIMEOUT'),
+  new MediaPreparationError('服务不可用','SERVICE_UNAVAILABLE'),
+])('reports preparation errors without changing playback paths: %s', async error=>{
   const failed=jest.fn();
   attachVodHls(video,original,jest.fn(),true,undefined,async()=>{throw error;},failed);
   await flush();
-  expect(failed).toHaveBeenCalledWith(error,false);
+  expect(failed).toHaveBeenCalledWith(error);
   expect(Hls.prototype.loadSource).not.toHaveBeenCalled();
+  expect(video.hls).toBeUndefined();
+});
+
+it('handles a synchronously failing adapter without starting playback',()=>{
+  const failed=jest.fn(), error=new Error('adapter failed');
+  attachVodHls(video,original,jest.fn(),true,undefined,()=>{throw error;},failed);
+  expect(failed).toHaveBeenCalledWith(error);
+  expect(Hls.prototype.loadSource).not.toHaveBeenCalled();
+  expect(video.hls).toBeUndefined();
+  expect(video.vodNativePending).toBe(false);
 });
 
 it('ignores a preparation failure after destruction instead of starting browser playback',async()=>{

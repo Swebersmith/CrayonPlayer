@@ -40,33 +40,31 @@ it.each([
   {...result,expiresAt:Date.now()-1},
 ])('rejects incomplete, unsafe timeline or expired service responses',async response=>{
   jest.mocked(global.fetch).mockResolvedValue({ok:true,json:async()=>response} as Response);
-  await expect(createMediaPreparer()('https://media.example/1.m3u8',true)).rejects.toMatchObject({browserFallback:false});
+  await expect(createMediaPreparer()('https://media.example/1.m3u8',true)).rejects.toBeInstanceOf(MediaPreparationError);
 });
 
 it.each([
-  [401,undefined,'登录',false],
-  [503,undefined,'未就绪',true],
-  [502,{code:'UPSTREAM_TIMEOUT'},'超时',true],
-  [502,{code:'UPSTREAM_UNAVAILABLE',upstreamStatus:403},'HTTP 403',true],
-  [502,{code:'INVALID_PLAYLIST'},'不是有效',true],
-  [502,{code:'INVALID_REQUEST'},'请求无效',false],
-])('classifies preparation errors for status=%s, code=%s',async(status,error,message,fallback)=>{
+  [401,undefined,'登录'],
+  [503,undefined,'未就绪'],
+  [502,{code:'UPSTREAM_TIMEOUT'},'超时'],
+  [502,{code:'UPSTREAM_UNAVAILABLE',upstreamStatus:403},'HTTP 403'],
+  [502,{code:'INVALID_PLAYLIST'},'不是有效'],
+  [502,{code:'INVALID_REQUEST'},'请求无效'],
+])('classifies preparation errors for status=%s, code=%s',async(status,error,message)=>{
   jest.mocked(global.fetch).mockResolvedValueOnce({ok:false,status,json:async()=>({error})} as Response);
   let failure:unknown;
   try{await createMediaPreparer()('https://media.example/1.m3u8',true);}catch(error){failure=error;}
   expect(failure).toBeInstanceOf(MediaPreparationError);
-  expect((failure as MediaPreparationError).browserFallback).toBe(fallback);
   expect(mediaPreparationNotice(failure)).toContain(message);
-  expect(mediaPreparationNotice(failure,true)).toContain('Crayon 本地过滤');
 });
 
-it('times out stalled preparation and permits local Crayon filtering',async()=>{
+it('times out stalled preparation with an explicit error',async()=>{
   jest.useFakeTimers();
   try{
     jest.mocked(global.fetch).mockImplementationOnce((_url,init)=>new Promise((_resolve,reject)=>{
       init!.signal!.addEventListener('abort',()=>reject(new Error('aborted')));
     }));
-    const waiting=expect(createMediaPreparer()('https://media.example/slow.m3u8',true)).rejects.toMatchObject({code:'SERVICE_TIMEOUT',browserFallback:true});
+    const waiting=expect(createMediaPreparer()('https://media.example/slow.m3u8',true)).rejects.toMatchObject({code:'SERVICE_TIMEOUT'});
     jest.advanceTimersByTime(20000);
     await waiting;
   }finally{jest.useRealTimers();}
@@ -74,7 +72,7 @@ it('times out stalled preparation and permits local Crayon filtering',async()=>{
 
 it('handles network errors and old plain-text relay failures without exposing provider HTML',async()=>{
   jest.mocked(global.fetch).mockRejectedValueOnce(new TypeError('private request information'));
-  await expect(createMediaPreparer()('https://media.example/1.m3u8',true)).rejects.toMatchObject({browserFallback:true,code:'SERVICE_UNREACHABLE'});
+  await expect(createMediaPreparer()('https://media.example/1.m3u8',true)).rejects.toMatchObject({code:'SERVICE_UNREACHABLE'});
   jest.mocked(global.fetch).mockResolvedValueOnce({ok:false,status:502,json:async()=>{throw new Error('HTML');}} as unknown as Response);
-  await expect(createMediaPreparer()('https://media.example/1.m3u8',true)).rejects.toMatchObject({browserFallback:true,code:'SERVICE_ERROR'});
+  await expect(createMediaPreparer()('https://media.example/1.m3u8',true)).rejects.toMatchObject({code:'SERVICE_ERROR'});
 });
