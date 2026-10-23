@@ -1,4 +1,4 @@
-import { createMediaPreparer } from '../src/media-client';
+import { createMediaPreparer, MediaPreparationError, mediaPreparationNotice } from '../src/media-client';
 
 const result = {url:'https://tv.example/api/player/media?token=clean',type:'application/vnd.apple.mpegurl',filter:{playlist:'',originalDuration:100,removed:[{start:30,end:40}],reason:'filtered'},expiresAt:Date.now()+8*3600000};
 const originalFetch = global.fetch;
@@ -40,5 +40,29 @@ it.each([
   {...result,expiresAt:Date.now()-1},
 ])('rejects incomplete, unsafe timeline or expired service responses',async response=>{
   jest.mocked(global.fetch).mockResolvedValue({ok:true,json:async()=>response} as Response);
-  await expect(createMediaPreparer()('https://media.example/1.m3u8',true)).rejects.toThrow();
+  await expect(createMediaPreparer()('https://media.example/1.m3u8',true)).rejects.toMatchObject({browserFallback:false});
+});
+
+it.each([
+  [401,undefined,'登录',false],
+  [503,undefined,'未就绪',true],
+  [502,{code:'UPSTREAM_TIMEOUT'},'超时',true],
+  [502,{code:'UPSTREAM_UNAVAILABLE',upstreamStatus:403},'HTTP 403',true],
+  [502,{code:'INVALID_PLAYLIST'},'不是有效',true],
+  [502,{code:'INVALID_REQUEST'},'请求无效',false],
+])('classifies preparation errors for status=%s, code=%s',async(status,error,message,fallback)=>{
+  jest.mocked(global.fetch).mockResolvedValueOnce({ok:false,status,json:async()=>({error})} as Response);
+  let failure:unknown;
+  try{await createMediaPreparer()('https://media.example/1.m3u8',true);}catch(error){failure=error;}
+  expect(failure).toBeInstanceOf(MediaPreparationError);
+  expect((failure as MediaPreparationError).browserFallback).toBe(fallback);
+  expect(mediaPreparationNotice(failure)).toContain(message);
+  expect(mediaPreparationNotice(failure,true)).toContain('浏览器过滤');
+});
+
+it('handles network errors and old plain-text relay failures without exposing provider HTML',async()=>{
+  jest.mocked(global.fetch).mockRejectedValueOnce(new TypeError('private request information'));
+  await expect(createMediaPreparer()('https://media.example/1.m3u8',true)).rejects.toMatchObject({browserFallback:true,code:'SERVICE_UNREACHABLE'});
+  jest.mocked(global.fetch).mockResolvedValueOnce({ok:false,status:502,json:async()=>{throw new Error('HTML');}} as unknown as Response);
+  await expect(createMediaPreparer()('https://media.example/1.m3u8',true)).rejects.toMatchObject({browserFallback:true,code:'SERVICE_ERROR'});
 });

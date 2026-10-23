@@ -99,3 +99,33 @@ it('filters the reported Bear episode by 26.04 seconds without changing programm
   const actual = (await (await get(ready.url))!.text()).split('\n').filter(line=>line.startsWith('https://')).map(grantOf).map(item=>item.u);
   expect(actual).toEqual(expected);
 });
+
+it('prepares the reported non-Baofeng nested master and plays an unmatched playlist intact',async()=>{
+  const master=readFileSync(join(__dirname,'__fixtures__/zuid/bear-episode1-master.m3u8'),'utf8');
+  const media=readFileSync(join(__dirname,'__fixtures__/zuid/bear-episode1.m3u8'),'utf8');
+  const root='https://v14.zuidazym3u8.com/yyv14/202610/01/mDCHrrdDVM27/video/index.m3u8';
+  const child=new URL('2000k_1080/hls/index.m3u8',root).href;
+  (global.fetch as jest.Mock).mockImplementation(async (input:string)=>new Response(String(input)===root?master:media));
+  const preparedResponse=(await prepare({url:root,blockAds:true}))!;
+  expect(preparedResponse.status).toBe(200);
+  const ready=await preparedResponse.json();
+  expect(grantOf(ready.url).u).toBe(child);
+  expect(ready.filter).toMatchObject({reason:'no-match',removed:[]});
+  expect(ready.filter.originalDuration).toBeCloseTo(809.32);
+  const response=(await get(ready.url))!;
+  expect(response.status).toBe(200);
+  const content=await response.text();
+  const expected=media.split('\n').map(line=>line.trim()).filter(line=>line&&!line.startsWith('#'));
+  const actual=content.split('\n').filter(line=>line.startsWith('https://')).map(grantOf).map(item=>item.u);
+  expect(actual).toEqual(expected);
+  expect(response.headers.get('X-Crayon-Ad-Seconds')).toBe('0');
+});
+
+it('distinguishes upstream refusal from an invalid playlist without disclosing response bodies',async()=>{
+  (global.fetch as jest.Mock).mockResolvedValueOnce(new Response('private provider explanation',{status:403}));
+  const denied=(await prepare())!;
+  expect(denied.status).toBe(502);
+  expect(await denied.json()).toEqual({error:{code:'UPSTREAM_UNAVAILABLE',upstreamStatus:403}});
+  (global.fetch as jest.Mock).mockResolvedValueOnce(new Response('<html>provider challenge</html>'));
+  expect(await (await prepare())!.json()).toEqual({error:{code:'INVALID_PLAYLIST'}});
+});

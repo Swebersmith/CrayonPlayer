@@ -41,3 +41,30 @@ it('runs the standalone deployment with authenticated pages/preparation and cook
     expect((await runtime.dispatchFetch('https://player.example/api/player/media?token=wrong')).status).toBe(401);
   }finally{await runtime.dispose();}
 });
+
+it('runs non-Baofeng nested playlists and distinguishes blocked upstreams in workerd',async()=>{
+  const code=esbuild.buildSync({entryPoints:['examples/cloudflare/worker.mjs'],bundle:true,write:false,format:'esm',platform:'browser'}).outputFiles[0].text;
+  const master=readFileSync(join(__dirname,'__fixtures__/zuid/bear-episode1-master.m3u8'),'utf8');
+  const media=readFileSync(join(__dirname,'__fixtures__/zuid/bear-episode1.m3u8'),'utf8');
+  const runtime=new Miniflare(convertV4MiniflareOptions({workers:[{
+    name:'crayon-zuid',compatibilityDate:'2026-10-23',modules:true,script:code,
+    bindings:{MEDIA_SECRET:'development-media-secret-for-tests',VIEWER_PASSWORD:'viewer-password'},
+    serviceBindings:{ASSETS:()=>new NativeResponse('Crayon Player')},
+    outboundService:(request:Request)=>request.url.includes('/blocked/')
+      ?new NativeResponse('provider refused',{status:403})
+      :new NativeResponse(request.url.includes('/2000k_1080/')?media:master),
+  }]}));
+  try{
+    const auth='Basic '+Buffer.from('crayon:viewer-password').toString('base64');
+    const prepare=(url:string)=>runtime.dispatchFetch('https://player.example/api/player/prepare',{method:'POST',headers:{Authorization:auth,'Content-Type':'application/json'},body:JSON.stringify({url,blockAds:true})});
+    const response=await prepare('https://media.example/show/index.m3u8');
+    expect(response.status).toBe(200);
+    const ready=await response.json();
+    expect(ready.filter).toMatchObject({reason:'no-match',removed:[]});
+    expect(ready.filter.originalDuration).toBeCloseTo(809.32);
+    const content=await (await runtime.dispatchFetch(ready.url)).text();
+    const segments=content.split('\n').filter((line:string)=>line.startsWith('https://'));
+    expect(segments).toHaveLength(media.split('\n').filter(line=>line.startsWith('https://')).length);
+    expect(await (await prepare('https://media.example/blocked/index.m3u8')).json()).toEqual({error:{code:'UPSTREAM_UNAVAILABLE',upstreamStatus:403}});
+  }finally{await runtime.dispose();}
+});
