@@ -104,6 +104,106 @@ it('shows a synchronized mini bar only with controls hidden and remembers the se
   expect(miniProgressSetting().switch).toBe(false);
 });
 
+const enableMini = () => {
+  miniProgressSetting().onSwitch!.call(art, { switch: false } as any, document.createElement('div'), new Event('click'));
+  mini().getBoundingClientRect = () => ({ left: 0, top: 176, width: 400, height: 24, right: 400, bottom: 200 } as DOMRect);
+  control(false);
+};
+
+it('keeps the mini track visible and controls hidden while picture swipes synchronously seek both directions', () => {
+  enableMini();
+  const gestures = attachGestures(art);
+  try {
+    touch(art.video, 'touchstart', 150);
+    touch(art.video, 'touchmove', 230);
+    expect(art.currentTime).toBe(70);
+    expect((mini().firstElementChild as HTMLElement).style.width).toBe('70%');
+    expect(mini().hidden).toBe(false);
+    expect(art.controls.show).toBe(false);
+    expect(hud().hidden).toBe(false);
+    expect(mini().getAttribute('aria-valuenow')).toBe('70');
+    // An upstream show request during mini scrubbing must not reveal the full bar.
+    control(true);
+    expect(art.controls.show).toBe(false);
+    touch(art.video, 'touchmove', 70);
+    expect(art.currentTime).toBe(30);
+    expect((mini().firstElementChild as HTMLElement).style.width).toBe('30%');
+    touch(art.video, 'touchend', 70);
+    expect(art.controls.show).toBe(false);
+    expect(mini().hidden).toBe(false);
+    expect(hud().hidden).toBe(true);
+    expect(art.template.$player.dataset.crayonScrubbingMini).toBeUndefined();
+    control(true);
+    touch(art.video, 'touchstart', 150); touch(art.video, 'touchmove', 190);
+    expect(art.controls.show).toBe(true);
+    expect(mini().hidden).toBe(true);
+    touch(art.video, 'touchend', 190);
+  } finally { gestures(); }
+});
+
+it('seeks on mini taps and drags outside the track without revealing controls or toggling playback', () => {
+  enableMini();
+  touch(mini(), 'touchstart', 100, 190);
+  expect(art.currentTime).toBe(25);
+  touch(window, 'touchmove', 300, 220);
+  expect(art.currentTime).toBe(75);
+  expect((mini().firstElementChild as HTMLElement).style.width).toBe('75%');
+  expect(art.controls.show).toBe(false);
+  touch(window, 'touchmove', -50, 220); expect(art.currentTime).toBe(0);
+  touch(window, 'touchend', 500, 220); expect(art.currentTime).toBe(100);
+  expect(art.controls.show).toBe(false);
+  const duplicate = new MouseEvent('click', { bubbles: true, cancelable: true, clientX: 100 });
+  mini().dispatchEvent(duplicate);
+  expect(duplicate.defaultPrevented).toBe(true);
+  expect(art.currentTime).toBe(100);
+  expect(art.toggle).not.toHaveBeenCalled();
+  expect(art.controls.toggle).not.toHaveBeenCalled();
+});
+
+it('handles mini hover, mouse dragging, direct clicks and keyboard input without opening the full bar', () => {
+  enableMini();
+  const native = jest.fn(); art.template.$player.addEventListener('mousemove', native);
+  mini().dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 120, clientY: 190 }));
+  expect(native).not.toHaveBeenCalled();
+  mini().dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 100 }));
+  expect(art.currentTime).toBe(25);
+  mini().dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 200 }));
+  window.dispatchEvent(new MouseEvent('mousemove', { clientX: 300 }));
+  expect(art.currentTime).toBe(75);
+  window.dispatchEvent(new MouseEvent('mouseup', { clientX: 280 }));
+  expect(art.currentTime).toBe(70);
+  mini().focus();
+  mini().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+  expect(art.currentTime).toBe(65);
+  expect(mini().getAttribute('role')).toBe('slider');
+  expect(mini().getAttribute('aria-valuenow')).toBe('65');
+  expect(art.controls.show).toBe(false);
+  expect(hud().hidden).toBe(false);
+  mini().dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+  expect(art.currentTime).toBe(100);
+});
+
+it('maps the mini track in rotated fullscreen and cancels on lock, source change and preference changes', () => {
+  enableMini(); art.isRotate = true;
+  mini().getBoundingClientRect = () => ({ left: 0, top: 100, width: 24, height: 400, right: 24, bottom: 500 } as DOMRect);
+  touch(mini(), 'touchstart', 10, 200); expect(art.currentTime).toBe(25);
+  touch(window, 'touchmove', 10, 400); expect(art.currentTime).toBe(75);
+  art.isLock = true; art.emit('lock');
+  expect(mini().getAttribute('aria-disabled')).toBe('true');
+  touch(window, 'touchmove', 10, 500); expect(art.currentTime).toBe(75);
+  expect(art.template.$player.dataset.crayonScrubbingMini).toBeUndefined();
+  art.isLock = false; art.emit('lock');
+  touch(mini(), 'touchstart', 10, 200);
+  art.video.dispatchEvent(new Event('loadstart'));
+  touch(window, 'touchmove', 10, 400); expect(art.currentTime).toBe(25);
+  touch(mini(), 'touchstart', 10, 300);
+  miniProgressSetting().onSwitch!.call(art, { switch: true } as any, document.createElement('div'), new Event('click'));
+  const time = art.currentTime;
+  touch(window, 'touchmove', 10, 400); expect(art.currentTime).toBe(time);
+  expect(mini().hidden).toBe(true);
+  expect(art.controls.show).toBe(false);
+});
+
 it('resets the new source progress and removes listeners, UI and accessibility attributes on destroy', () => {
   art.seek = 90;
   art.video.dispatchEvent(new Event('loadstart'));

@@ -232,5 +232,27 @@ it('synchronizes real ArtPlayer bars and time labels on both drag surfaces befor
     expect(mini.hidden).toBe(false);
     expect((mini.firstElementChild as HTMLElement).style.width).toBe('75%');
     expect(art.setting.show).toBe(false);
+    touch(art.video,'touchstart',150);
+    touch(art.video,'touchmove',110);
+    expect(art.currentTime).toBe(2970);
+    expect((mini.firstElementChild as HTMLElement).style.width).toBe('74.25%');
+    expect(mini.hidden).toBe(false);
+    expect(art.controls.show).toBe(false);
+    expect(art.template.$player.classList.contains('art-hover')).toBe(false);
+    touch(art.video,'touchend',110);
+    mini.getBoundingClientRect=()=>({left:0,top:201,right:400,bottom:225,width:400,height:24} as DOMRect);
+    mini.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:100,clientY:215}));
+    expect(art.controls.show).toBe(false);
+    mini.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0,clientX:100,clientY:215}));
+    expect(art.currentTime).toBe(1000);
+    window.dispatchEvent(new MouseEvent('mousemove',{clientX:300,clientY:240}));
+    expect(art.currentTime).toBe(3000);
+    window.dispatchEvent(new MouseEvent('mouseup',{clientX:240,clientY:240}));
+    expect(art.currentTime).toBe(2400);
+    expect(played.style.width).toBe('60%');
+    expect((mini.firstElementChild as HTMLElement).style.width).toBe('60%');
+    expect(mini.getAttribute('aria-valuenow')).toBe('2400');
+    expect(art.controls.show).toBe(false);
+    expect(art.template.$player.classList.contains('art-control-show')).toBe(false);
   } finally { art.destroy(); container.remove(); pause.mockRestore(); load.mockRestore(); localStorage.clear(); }
 });
