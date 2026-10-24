@@ -1,6 +1,6 @@
 /// <reference path="./worker-configuration.d.ts" />
 import { handleMediaRelay } from '../../src/media-relay';
-import { authorizeViewer, handleViewerAuth, viewerLoginPage } from './viewer-auth.mjs';
+import { authorizeViewer, embeddedSession, handleViewerAuth, viewerLoginPage } from './viewer-auth.mjs';
 
 export default {
   /** @param {Request} request @param {Env} env */
@@ -10,7 +10,7 @@ export default {
     if (auth) return auth;
     const relay = await handleMediaRelay(request,{
       secret: env.MEDIA_SECRET,
-      authorize: request => authorizeViewer(request,env),
+      authorize: async request => await authorizeViewer(request,env) || !!await embeddedSession(request,env),
     });
     // Signed media stays accessible to TVs without the browser's session cookie.
     if (relay) {
@@ -21,7 +21,16 @@ export default {
       }
       return relay;
     }
-    if (!await authorizeViewer(request,env)) {
+    const pageUrl = new URL(request.url);
+    const navigation = pageUrl.pathname === '/' || /^\/parse\/?$/.test(pageUrl.pathname);
+    const embedded = navigation && (pageUrl.searchParams.get('embed') === '1' ||
+      /^\/parse\/?$/.test(pageUrl.pathname) && pageUrl.searchParams.get('embed') !== '0' ||
+      request.headers.get('Sec-Fetch-Dest') === 'iframe');
+    // Only the embed UI and its compiled JS/CSS are public. All preparation still
+    // requires a verified session; no video is loaded before the UI authenticates.
+    const publicUi = ['GET', 'HEAD'].includes(request.method) &&
+      (embedded || /^\/assets\/[\w-]+\.(?:js|css)$/.test(pageUrl.pathname));
+    if (!publicUi && !await authorizeViewer(request,env)) {
       const url = new URL(request.url);
       const navigation = url.pathname === '/' || /^\/parse\/?$/.test(url.pathname) || request.headers.get('Accept')?.includes('text/html');
       if (navigation && ['GET', 'HEAD'].includes(request.method)) return viewerLoginPage(request);

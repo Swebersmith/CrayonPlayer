@@ -7,6 +7,11 @@ export interface PreparedMedia {
   expiresAt?: number;
 }
 export type MediaPreparer = (url: string, blockAds: boolean) => Promise<PreparedMedia>;
+export interface MediaPreparerAuth {
+  /** A short-lived session token, never the viewer's password. */
+  accessToken: () => string | undefined;
+  onUnauthorized: () => void;
+}
 
 /** Safe messages only: never show an upstream URL, response body or credentials. */
 export class MediaPreparationError extends Error {
@@ -21,7 +26,7 @@ export function mediaPreparationNotice(error: unknown): string {
 }
 
 /** One bounded cache is shared by local playback and casting for this adapter. */
-export function createMediaPreparer(endpoint = '/api/player/prepare'): MediaPreparer {
+export function createMediaPreparer(endpoint = '/api/player/prepare', auth?: MediaPreparerAuth): MediaPreparer {
   const cache = new Map<string, { created: number; expiresAt: number; promise: Promise<PreparedMedia> }>();
   return (url, blockAds) => {
     const key = JSON.stringify([url, blockAds]);
@@ -34,9 +39,10 @@ export function createMediaPreparer(endpoint = '/api/player/prepare'): MediaPrep
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 20000);
       try {
+        const token = auth?.accessToken();
         response = await fetch(endpoint, {
           method: 'POST', credentials: 'same-origin', cache: 'no-store',
-          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, blockAds }),
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: JSON.stringify({ url, blockAds }),
           signal: controller.signal,
         });
       } catch {
@@ -44,7 +50,11 @@ export function createMediaPreparer(endpoint = '/api/player/prepare'): MediaPrep
         throw new MediaPreparationError('无法连接去广告服务，请检查网络后重试','SERVICE_UNREACHABLE');
       } finally { clearTimeout(timer); }
       if (!response.ok) {
-        if (response.status === 401 || response.status === 403) throw new MediaPreparationError('登录已失效或无权准备清单，请刷新页面输入访问密码后重试','UNAUTHORIZED');
+        if (response.status === 401 || response.status === 403) {
+          cache.clear();
+          auth?.onUnauthorized();
+          throw new MediaPreparationError('登录已失效或无权准备清单，请重新输入访问密码后重试','UNAUTHORIZED');
+        }
         if (response.status === 503) throw new MediaPreparationError('去广告服务未就绪，请检查服务配置或稍后重试','SERVICE_UNAVAILABLE');
         let code: string | undefined;
         let upstreamStatus: number | undefined;

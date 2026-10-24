@@ -1,6 +1,7 @@
-import { createCrayonPlayer } from './src/index';
+import { createCrayonPlayer, createMediaPreparer } from './src/index';
 import { mediaAddress, playbackEntry, playbackLink } from './demo-entry';
 import { setupIntegrationGuide } from './demo-integration';
+import { setupEmbeddedLogin } from './demo-auth';
 
 declare const __CRAYON_PREPARE_ENDPOINT__: string;
 
@@ -14,6 +15,7 @@ if (signOut) signOut.hidden = !__CRAYON_PREPARE_ENDPOINT__ || entry.embedded;
 input.value = entry.url;
 setupIntegrationGuide(window.location.href, !!__CRAYON_PREPARE_ENDPOINT__, () => input.value);
 let player: ReturnType<typeof createCrayonPlayer> | undefined;
+let embeddedLogin: ReturnType<typeof setupEmbeddedLogin> | undefined;
 function showError(message: string) {
   document.body.dataset.entryError = 'true';
   status.textContent = message;
@@ -24,7 +26,8 @@ function load() {
   player = createCrayonPlayer({
     container: '#player', url, title: 'Crayon Player', autoplay: false,
     storageKey: `crayon-player-demo:${url}`,
-    prepareMedia: __CRAYON_PREPARE_ENDPOINT__ || undefined,
+    prepareMedia: embeddedLogin ? createMediaPreparer(__CRAYON_PREPARE_ENDPOINT__, embeddedLogin) : __CRAYON_PREPARE_ENDPOINT__ || undefined,
+    ...(embeddedLogin ? { player: { settings: [{ name: 'viewerLogout', html: '退出登录', onClick() { void embeddedLogin!.logout(); return '退出登录'; } }] } } : {}),
   });
   document.body.dataset.entryError = 'false';
   link.hidden = true;
@@ -34,6 +37,7 @@ function load() {
 }
 document.querySelector('#source-form')!.addEventListener('submit', event => {
   event.preventDefault();
+  if (embeddedLogin && !embeddedLogin.isReady()) return;
   try { load(); } catch (error) { showError((error as Error).message); }
 });
 document.querySelector('#share-source')!.addEventListener('click', () => {
@@ -45,8 +49,21 @@ document.querySelector('#share-source')!.addEventListener('click', () => {
     status.textContent = '播放链接已生成，可复制下方地址使用；首次访问仍需登录播放器。';
   } catch (error) { showError((error as Error).message); }
 });
-if (entry.error) showError(entry.error);
-else {
+const start = () => {
+  document.querySelector<HTMLElement>('#player-page')!.hidden = false;
   try { load(); } catch (error) { showError((error as Error).message); }
+  if (embeddedLogin?.storageBlocked() && player) player.notice.show = '浏览器禁止保存登录状态，刷新或换集后可能需要重新输入密码';
+};
+if (entry.error) {
+  document.querySelector<HTMLElement>('#player-page')!.hidden = false;
+  showError(entry.error);
+} else if (__CRAYON_PREPARE_ENDPOINT__ && (entry.embedded || window.self !== window.top)) {
+  embeddedLogin = setupEmbeddedLogin(start, () => { player?.destroy(); player = undefined; });
+  signOut?.addEventListener('submit', event => { event.preventDefault(); void embeddedLogin!.logout(); });
+} else {
+  start();
 }
-window.addEventListener('pagehide', () => player?.destroy());
+window.addEventListener('pagehide', () => { embeddedLogin?.dispose(); player?.destroy(); });
+// A restored history entry must recreate the disposed player, reusing the saved
+// session rather than leaving a dead video surface in the browser's back cache.
+window.addEventListener('pageshow', event => { if (event.persisted) window.location.reload(); });
