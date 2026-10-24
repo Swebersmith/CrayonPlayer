@@ -1,6 +1,6 @@
 {
   "name": "@swebersmith/crayon-player",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Crayon Player: a customizable HTML5 video player with casting and touch gestures",
   "main": "dist/crayon-player.cjs",
   "module": "dist/crayon-player.mjs",

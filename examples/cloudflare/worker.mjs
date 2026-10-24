@@ -29,6 +29,16 @@ export default {
     if (!await authorize(request,env)) return new Response('请登录 Crayon Player',{
       status:401,headers:{'WWW-Authenticate':'Basic realm="Crayon Player", charset="UTF-8"','Cache-Control':'no-store'},
     });
+    // Keep the browser URL and query while serving the same independent page.
+    const incoming = new URL(request.url);
+    if (/^\/parse\/?$/.test(incoming.pathname)) {
+      incoming.pathname = '/';
+      incoming.search = '';
+      const response = await env.ASSETS.fetch(new Request(incoming,request));
+      const headers = new Headers(response.headers);
+      headers.set('Cache-Control','private, no-store');
+      return new Response(response.body,{status:response.status,headers});
+    }
     return env.ASSETS.fetch(request);
   },
 };

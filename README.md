@@ -67,6 +67,28 @@ npm run deploy
 
 依据：[Workers 静态资源路由](https://developers.cloudflare.com/workers/static-assets/routing/worker-script/)、[Wrangler 安装](https://developers.cloudflare.com/workers/wrangler/install-and-update/)、[Secrets 配置](https://developers.cloudflare.com/workers/configuration/secrets/)。
 
+### 获取独立播放入口
+
+完整部署后，在 Cloudflare 的 Domains & Routes 查看自己的 HTTPS 域名。直接打开首页，粘贴视频地址并点击 **生成播放链接**，即可复制编码完整的链接。入口前缀为：
+
+```text
+https://你的播放器域名/parse?url=
+```
+
+将 `encodeURIComponent(视频地址)` 拼在后面即可使用。例如：
+
+```js
+const playerUrl = new URL('/parse', 'https://player.example');
+playerUrl.searchParams.set('url', 'https://media.example/video.m3u8?token=abc&episode=2');
+// playerUrl.href 可以独立打开；iframe 接入时需允许 fullscreen / autoplay / picture-in-picture。
+```
+
+`/parse` 默认只显示播放器；添加 `&embed=0` 可显示完整页面。首页也支持 `/?url=编码后的视频地址`。纯静态部署使用首页查询参数，首页生成链接时会保留所在子目录。
+
+此入口接收媒体地址，不解析任意视频网站网页。首次访问仍需使用 `crayon` 和 `VIEWER_PASSWORD` 登录，不能将密码或 `MEDIA_SECRET` 拼进 URL。跨站 iframe 的 HTTP 登录受浏览器限制；必要时先独立打开播放器域名登录，仍无法嵌入时使用独立打开或同源 SDK 接入。
+
+独立部署 **无需数据库、KV、D1 或视频网站账户**。签名媒体链接无需数据库保存，观看进度使用当前浏览器的 localStorage，不会跨设备自动同步。
+
 ## 接入自己的网页
 
 ### 安装 npm 压缩包
@@ -78,10 +100,10 @@ npm run check
 npm pack
 ```
 
-得到 `swebersmith-crayon-player-0.3.2.tgz`，在自己的前端项目安装该文件：
+得到 `swebersmith-crayon-player-0.3.3.tgz`，在自己的前端项目安装该文件：
 
 ```sh
-npm install /path/to/swebersmith-crayon-player-0.3.2.tgz
+npm install /path/to/swebersmith-crayon-player-0.3.3.tgz
 ```
 
 拥有仓库访问权限时，也可 `npm install github:Swebersmith/CrayonPlayer`，安装会自动构建。不要求该名称已发布到 npm 公共仓库，不能直接假定 `npm install @swebersmith/crayon-player` 可用。

@@ -12,11 +12,15 @@ jest.setTimeout(30000);
 it('runs the standalone deployment with authenticated pages/preparation and cookie-free filtered TV media',async()=>{
   const code=esbuild.buildSync({entryPoints:['examples/cloudflare/worker.mjs'],bundle:true,write:false,format:'esm',platform:'browser'}).outputFiles[0].text;
   const fixture=readFileSync(join(__dirname,'__fixtures__/baofeng/bear-episode1.m3u8'),'utf8');
+  const assetUrls:string[]=[];
   const runtime=new Miniflare(convertV4MiniflareOptions({workers:[{
     name:'crayon-player',
     compatibilityDate:'2026-10-23',modules:true,script:code,
     bindings:{MEDIA_SECRET:'development-media-secret-for-tests',VIEWER_PASSWORD:'viewer-password'},
-    serviceBindings:{ASSETS:()=>new NativeResponse('<!doctype html><title>Crayon Player</title>')},
+    serviceBindings:{ASSETS:(request:Request)=>{
+      assetUrls.push(request.url);
+      return new NativeResponse(new URL(request.url).pathname==='/'?'<!doctype html><title>Crayon Player</title>':'not found',{status:new URL(request.url).pathname==='/'?200:404});
+    }},
     outboundService:(request:Request)=>request.url.includes('.m3u8')
       ?new NativeResponse(fixture,{headers:{'Content-Type':'application/vnd.apple.mpegurl'}})
       :new NativeResponse(new Uint8Array([1,2,3]),{status:206,headers:{'Content-Range':'bytes 0-2/9','Content-Type':'video/mp2t'}}),
@@ -25,6 +29,15 @@ it('runs the standalone deployment with authenticated pages/preparation and cook
     expect((await runtime.dispatchFetch('https://player.example/')).status).toBe(401);
     const auth='Basic '+Buffer.from('crayon:viewer-password').toString('base64');
     expect((await runtime.dispatchFetch('https://player.example/',{headers:{Authorization:auth}})).status).toBe(200);
+    expect((await runtime.dispatchFetch('https://player.example/parse?url=https%3A%2F%2Fmedia.example%2Fepisode.m3u8')).status).toBe(401);
+    for(const path of ['/parse','/parse/']){
+      const parsed=await runtime.dispatchFetch('https://player.example'+path+'?url=https%3A%2F%2Fmedia.example%2Fepisode.m3u8',{headers:{Authorization:auth}});
+      expect(parsed.status).toBe(200);
+      expect(parsed.headers.get('location')).toBeNull();
+      expect(parsed.headers.get('cache-control')).toBe('private, no-store');
+      expect(await parsed.text()).toContain('Crayon Player');
+      expect(assetUrls[assetUrls.length-1]).toBe('https://player.example/');
+    }
     const prepare=(authorization:string)=>runtime.dispatchFetch('https://player.example/api/player/prepare',{method:'POST',headers:{Authorization:authorization,'Content-Type':'application/json'},body:JSON.stringify({url:'https://media.example/episode.m3u8',blockAds:true})});
     expect((await prepare('Basic '+Buffer.from('crayon:wrong').toString('base64'))).status).toBe(401);
     const ready=await (await prepare(auth)).json();
