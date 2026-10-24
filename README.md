@@ -57,10 +57,11 @@ npm run deploy
 ```
 
 - `MEDIA_SECRET`：签名随机密钥，建议至少 32 字符。可在自己的终端运行 `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"` 生成，再在 secret 提示中输入。不能放进前端、Git 或 `vars`。
-- `VIEWER_PASSWORD`：访问页面和准备接口的口令，建议使用长的随机英文数字口令。浏览器弹出登录框时，用户名填写 **`crayon`**，密码填写该口令。
+- `VIEWER_PASSWORD`：访问页面和准备接口的口令，建议使用长的随机英文数字口令。打开播放器后，在网页登录页只输入该密码，无需用户名。
 - `secret put` 会修改远端 Worker；先确认 Cloudflare 账户和 Worker 名称。后续更新通常只需 `npm ci` 和 `npm run deploy`，不要重设密钥，否则旧投屏链接会失效。
 - `deploy:check` 只构建并打包检查，`deploy` 才发布。Workers Builds 默认自动安装依赖，使用构建命令 `npm run build:hosted`、部署命令 `npx wrangler deploy --keep-vars`，并提前配置上述两个运行时 secret；首次配置的完整顺序见控制台教程。
 - 此模式自动启用 `prepareMedia: '/api/player/prepare'`。页面和准备接口需要登录；电视读取的媒体链接只验证签名，无需网页口令，默认有效 8 小时。请勿公开转发这些临时链接。
+- 登录状态保存在签名的 HttpOnly / Secure Cookie 中，有效 12 小时，过期后重新输入密码。首页提供「退出登录」。沿用已有 `VIEWER_PASSWORD` 和 `MEDIA_SECRET`，无需新增配置；更换访问密码会使已有浏览器登录失效。登录后回到原播放链接，密码不进入 URL 或前端存储。
 - 服务会转发视频流量，平台请求量、带宽策略、CPU 和上游连通性限制仍然适用。不要把准备接口改成匿名开放代理。
 
 本地验证完整部署：在仓库根目录创建未提交的 `.dev.vars`，写入 `MEDIA_SECRET=自己的测试密钥` 和 `VIEWER_PASSWORD=自己的测试口令`，运行 `npm run dev:hosted`。改动 Worker 配置后运行 `npm run worker:types`。本地口令、生成类型和 `.wrangler/` 不进入版本库或 npm 包。
@@ -85,7 +86,7 @@ playerUrl.searchParams.set('url', 'https://media.example/video.m3u8?token=abc&ep
 
 `/parse` 默认只显示播放器；添加 `&embed=0` 可显示完整页面。首页也支持 `/?url=编码后的视频地址`。纯静态部署使用首页查询参数，首页生成链接时会保留所在子目录。
 
-此入口接收媒体地址，不解析任意视频网站网页。首次访问仍需使用 `crayon` 和 `VIEWER_PASSWORD` 登录，不能将密码或 `MEDIA_SECRET` 拼进 URL。跨站 iframe 的 HTTP 登录受浏览器限制；必要时先独立打开播放器域名登录，仍无法嵌入时使用独立打开或同源 SDK 接入。
+此入口接收媒体地址，不解析任意视频网站网页。首次访问只需在网页输入 `VIEWER_PASSWORD`，不能将密码或 `MEDIA_SECRET` 拼进 URL。跨站 iframe 的 Cookie 登录受浏览器限制；必要时使用独立打开或同源 SDK 接入。登录会保留原播放链接的地址参数。
 
 独立部署 **无需数据库、KV、D1 或视频网站账户**。签名媒体链接无需数据库保存，观看进度使用当前浏览器的 localStorage，不会跨设备自动同步。
 
@@ -235,7 +236,7 @@ const response = await handleMediaRelay(request, {
 
 **手机一直显示加载**：网站应提供能直接调用 Crayon `play()` 的点击播放按钮，以满足有声播放的用户手势限制。准备请求超时会停止加载并提示；HLS 致命错误最多连续恢复 3 次，仍失败会停止并提示，不切换过滤方式或播放器。
 
-**准备接口 401**：先在同源页面登录。示例 Worker 使用 `crayon` 和 `VIEWER_PASSWORD`；自定义服务的 `authorize` 应验证宿主会话，不要把签名密钥作为前端口令。
+**准备接口 401**：刷新播放器页面并输入 `VIEWER_PASSWORD` 重新登录，无需用户名。准备接口使用登录 Cookie，未登录时返回 JSON 401，不再触发浏览器用户名弹窗；自定义服务的 `authorize` 应验证宿主会话，不要把签名密钥作为前端口令。
 
 **是不是只支持某一个资源？**：不是。过滤器按 HLS 清单结构识别插播，包含通用规则与已验证的插播路径规则，不按片源名称限制播放。`no-match` 表示未识别出可安全移除的广告，`unsupported` 表示当前格式保守保留；两者都可以继续播放，不能当成“已经没有广告”。
 

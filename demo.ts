@@ -8,6 +8,8 @@ const status = document.querySelector<HTMLDivElement>('#status')!;
 const link = document.querySelector<HTMLInputElement>('#playback-link')!;
 const entry = playbackEntry(window.location.href);
 document.body.dataset.embedded = String(entry.embedded);
+const signOut = document.querySelector<HTMLFormElement>('#sign-out');
+if (signOut) signOut.hidden = !__CRAYON_PREPARE_ENDPOINT__ || entry.embedded;
 input.value = entry.url;
 let player: ReturnType<typeof createCrayonPlayer> | undefined;
 function showError(message: string) {

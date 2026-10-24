@@ -36,7 +36,7 @@
 - 部署命令：`npx wrangler deploy --keep-vars`。
 - 预览命令（开启非生产分支 / PR 预览时）：`npx wrangler preview`。仓库已在 `wrangler.jsonc` 声明 `"previews": {}`，页面资源和兼容性配置仍放在顶层。
 
-预览有独立的运行时密钥。需要预览 PR 时，在 Worker 的 **Settings → Variables and Secrets → Previews Base** 中添加预览用的 `MEDIA_SECRET` 和 `VIEWER_PASSWORD`，类型选择 **Secret**；生产环境已设置的密钥不能代替预览配置。新建的 Preview 会取得 Base 密钥，已创建的 Preview 需要在该预览中单独更新密钥。预览仍通过用户名 `crayon` 和预览的 `VIEWER_PASSWORD` 登录。
+预览有独立的运行时密钥。需要预览 PR 时，在 Worker 的 **Settings → Variables and Secrets → Previews Base** 中添加预览用的 `MEDIA_SECRET` 和 `VIEWER_PASSWORD`，类型选择 **Secret**；生产环境已设置的密钥不能代替预览配置。新建的 Preview 会取得 Base 密钥，已创建的 Preview 需要在该预览中单独更新密钥。预览登录页只需输入预览的 `VIEWER_PASSWORD`，无需用户名。
 
 Cloudflare 默认会根据 `package-lock.json` 安装依赖；本仓库的 `.node-version` 指定 Node.js 24。不要开启 `SKIP_DEPENDENCY_INSTALL`。如果之前已开启，移除该构建变量，或自行将构建命令改为 `npm ci && npm run build:hosted`。
 
@@ -49,7 +49,7 @@ Cloudflare 默认会根据 `package-lock.json` 安装依赖；本仓库的 `.nod
 ## 4. 打开并验证
 
 1. 在 Worker 的 **Deployments（部署）** 中确认最新 GitHub 提交的构建和部署均成功，且已成为当前活动部署。
-2. 打开 Cloudflare 提供的 HTTPS `workers.dev` 地址。浏览器弹出登录框时，用户名填 **`crayon`**，密码填 `VIEWER_PASSWORD` 的值。
+2. 打开 Cloudflare 提供的 HTTPS `workers.dev` 地址。在网页登录页输入 `VIEWER_PASSWORD` 的值，无需用户名。登录有效 12 小时，首页可点击「退出登录」。已有部署沿用原密码即可，无需重新配置 Secret。
 3. 首页显示 Crayon Player 后，可先用默认公开测试视频检查播放、全屏和手势，再粘贴自己的 MP4 / M3U8 地址。
 4. 开启去广告后，设置会显示已过滤秒数、未识别出广告或暂不支持过滤。无法读取片源时会显示具体错误，不自动切换原片、本地过滤或其他播放器。
 5. 投屏时，电视通过签名媒体地址读取过滤后的清单，不需要网页登录口令。实际可用性仍取决于片源连通性、设备编码支持和投屏发现条件。
@@ -72,7 +72,7 @@ Cloudflare 默认会根据 `package-lock.json` 安装依赖；本仓库的 `.nod
 - **`Your Wrangler configuration is missing a previews block`**：失败发生在 `wrangler preview`。确认构建使用包含 `"previews": {}` 的最新提交后重试。生产部署命令填 `npx wrangler deploy --keep-vars`，非生产分支 / PR 的预览命令填 `npx wrangler preview`，分别配置；open beta 的 WARNING 本身不会导致失败。预览随后缺少密钥时，按上面的 Previews Base 步骤设置。
 - **Worker 名称不匹配**：检查控制台名称与 `wrangler.jsonc` 的 `name`，不要通过随意修改部署目标绕过。
 - **一直是 Hello World**：检查 GitHub 构建是否成功、部署命令是否为 `wrangler deploy`，以及新版本是否已成为活动部署。
-- **一直提示登录或 401**：用户名是 `crayon`；检查 `VIEWER_PASSWORD` 和浏览器保存的旧登录凭据。
+- **一直提示登录或 401**：刷新页面，在网页输入访问密码；检查当前生产或预览环境的 `VIEWER_PASSWORD`、浏览器 Cookie 设置及登录是否过期。无需用户名，旧版浏览器保存的 Basic 登录凭据不再用于验证。
 - **显示“请配置 MEDIA_SECRET 和 VIEWER_PASSWORD”**：当前活动版本没有取得两个运行时密钥，回到运行时设置检查并部署。
 - **页面打开，但清单失败**：先看页面的具体错误；上游 403/超时、无效清单和服务配置问题与 GitHub 自动更新是不同环节。
 
