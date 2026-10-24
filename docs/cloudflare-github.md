@@ -34,6 +34,9 @@
 - 根目录：仓库根目录，保留默认值 `/`；不要填 `src`、`dist` 或 `demo-dist`。
 - 构建命令：`npm run build:hosted`。
 - 部署命令：`npx wrangler deploy --keep-vars`。
+- 预览命令（开启非生产分支 / PR 预览时）：`npx wrangler preview`。仓库已在 `wrangler.jsonc` 声明 `"previews": {}`，页面资源和兼容性配置仍放在顶层。
+
+预览有独立的运行时密钥。需要预览 PR 时，在 Worker 的 **Settings → Variables and Secrets → Previews Base** 中添加预览用的 `MEDIA_SECRET` 和 `VIEWER_PASSWORD`，类型选择 **Secret**；生产环境已设置的密钥不能代替预览配置。新建的 Preview 会取得 Base 密钥，已创建的 Preview 需要在该预览中单独更新密钥。预览仍通过用户名 `crayon` 和预览的 `VIEWER_PASSWORD` 登录。
 
 Cloudflare 默认会根据 `package-lock.json` 安装依赖；本仓库的 `.node-version` 指定 Node.js 24。不要开启 `SKIP_DEPENDENCY_INSTALL`。如果之前已开启，移除该构建变量，或自行将构建命令改为 `npm ci && npm run build:hosted`。
 
@@ -66,6 +69,7 @@ Cloudflare 默认会根据 `package-lock.json` 安装依赖；本仓库的 `.nod
 ## 常见问题
 
 - **`The following required secrets have not been set`**：检查运行时的两项 Secret 是否保存并部署到了同名 Worker，再重试构建；只填构建变量无效。
+- **`Your Wrangler configuration is missing a previews block`**：失败发生在 `wrangler preview`。确认构建使用包含 `"previews": {}` 的最新提交后重试。生产部署命令填 `npx wrangler deploy --keep-vars`，非生产分支 / PR 的预览命令填 `npx wrangler preview`，分别配置；open beta 的 WARNING 本身不会导致失败。预览随后缺少密钥时，按上面的 Previews Base 步骤设置。
 - **Worker 名称不匹配**：检查控制台名称与 `wrangler.jsonc` 的 `name`，不要通过随意修改部署目标绕过。
 - **一直是 Hello World**：检查 GitHub 构建是否成功、部署命令是否为 `wrangler deploy`，以及新版本是否已成为活动部署。
 - **一直提示登录或 401**：用户名是 `crayon`；检查 `VIEWER_PASSWORD` 和浏览器保存的旧登录凭据。
@@ -74,4 +78,4 @@ Cloudflare 默认会根据 `package-lock.json` 安装依赖；本仓库的 `.nod
 
 完整部署会转发视频分片。请求量、CPU、流量策略和源站对 Cloudflare 出口的访问限制都会影响播放；部署成功不代表所有片源和设备都能播放。
 
-依据 Cloudflare 官方文档：[控制台创建 Worker](https://developers.cloudflare.com/workers/get-started/dashboard/)、[连接现有 Worker 与仓库](https://developers.cloudflare.com/workers/ci-cd/builds/)、[构建配置](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)、[构建环境与 Node 版本](https://developers.cloudflare.com/workers/ci-cd/builds/build-image/)、[运行时密钥](https://developers.cloudflare.com/workers/configuration/secrets/)。
+依据 Cloudflare 官方文档：[控制台创建 Worker](https://developers.cloudflare.com/workers/get-started/dashboard/)、[连接现有 Worker 与仓库](https://developers.cloudflare.com/workers/ci-cd/builds/)、[构建配置](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)、[预览配置与密钥](https://developers.cloudflare.com/workers/previews/configuration/)、[构建环境与 Node 版本](https://developers.cloudflare.com/workers/ci-cd/builds/build-image/)、[运行时密钥](https://developers.cloudflare.com/workers/configuration/secrets/)。
