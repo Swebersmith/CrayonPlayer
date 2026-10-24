@@ -25,7 +25,7 @@ function miniPreference(fallback = false) {
 
 export function miniProgressSetting(fallback = false): Setting {
   return {
-    name: 'crayonMiniProgress', html: '迷你进度条', tooltip: '隐藏控制栏时显示',
+    name: 'crayonMiniProgress', html: '迷你进度条', tooltip: '隐藏控制栏时显示 · 可点按拖动',
     switch: miniPreference(fallback),
     onSwitch(item) {
       const enabled = !item.switch;
@@ -36,14 +36,22 @@ export function miniProgressSetting(fallback = false): Setting {
   };
 }
 
-export function setScrubbing(art: Artplayer, active: boolean) {
+export function setScrubbing(art: Artplayer, active: boolean, preferMini = false) {
+  const root = art.template.$player;
   if (active) {
-    art.template.$player.dataset.crayonScrubbing = 'true';
-    art.controls.show = true;
+    const mini = root.querySelector<HTMLElement>('[data-crayon-mini-progress]');
+    root.dataset.crayonScrubbing = 'true';
+    if (preferMini && !art.controls.show && mini && !mini.hidden) {
+      root.dataset.crayonScrubbingMini = 'true';
+    } else {
+      delete root.dataset.crayonScrubbingMini;
+      art.controls.show = true;
+    }
   } else {
-    delete art.template.$player.dataset.crayonScrubbing;
+    delete root.dataset.crayonScrubbing;
+    delete root.dataset.crayonScrubbingMini;
   }
-  art.template.$player.dispatchEvent(new Event(SCRUB_EVENT));
+  root.dispatchEvent(new Event(SCRUB_EVENT));
 }
 
 /** Update the bar on the input event, without waiting for the media's timeupdate. */
@@ -67,24 +75,36 @@ export function attachProgress(art: Artplayer) {
   hud.style.cssText = 'position:absolute;top:var(--art-padding,10px);left:var(--art-padding,10px);max-width:calc(100% - 24px);padding:4px 7px;border-radius:4px;background:#0009;color:white;font:12px/1.5 sans-serif;font-variant-numeric:tabular-nums;pointer-events:none;z-index:81';
   const mini = document.createElement('div');
   mini.dataset.crayonMiniProgress = '';
-  mini.setAttribute('aria-hidden', 'true');
-  mini.style.cssText = 'position:absolute;left:0;right:0;bottom:0;height:3px;background:#ffffff40;pointer-events:none;z-index:90';
+  mini.setAttribute('role', 'slider');
+  mini.setAttribute('aria-label', '迷你进度条');
+  mini.setAttribute('aria-valuemin', '0');
+  // The visible track stays thin; the transparent area above it is a touch target.
+  mini.style.cssText = 'position:absolute;left:0;right:0;bottom:0;height:24px;background:linear-gradient(to top,#ffffff40 3px,transparent 3px);touch-action:none;cursor:pointer;z-index:90';
   const fill = document.createElement('div');
-  fill.style.cssText = 'height:100%;width:0;background:var(--art-theme,#22c55e)';
+  fill.style.cssText = 'position:absolute;left:0;bottom:0;height:3px;width:0;background:var(--art-theme,#22c55e);pointer-events:none';
   mini.appendChild(fill);
   root.append(hud, mini);
   let enabled = art.setting.find('crayonMiniProgress')?.switch ?? miniPreference(art.option.miniProgressBar);
   let displayed = art.currentTime;
-  let dragging: { kind: 'touch'; id: number } | { kind: 'mouse' } | undefined;
+  let dragging: { kind: 'touch'; id: number; bar: HTMLElement } | { kind: 'mouse'; bar: HTMLElement } | undefined;
   let suppressClickUntil = 0;
   const scrubbing = () => root.dataset.crayonScrubbing === 'true';
+  const miniScrubbing = () => root.dataset.crayonScrubbingMini === 'true';
   const render = () => {
     const valid = seekable(art);
+    if (miniScrubbing() && !art.controls.show) root.classList.remove('art-hover');
     const current = valid ? clamp(displayed, art.duration) : 0;
     hud.textContent = `${formatDuration(current)} / ${formatDuration(art.duration)}`;
-    hud.hidden = !valid || art.isLock || !(art.controls.show || scrubbing());
-    mini.hidden = !valid || !enabled || art.controls.show || scrubbing();
+    hud.hidden = !valid || art.isLock || !(art.controls.show || scrubbing() || document.activeElement === mini);
+    mini.hidden = !valid || !enabled || art.controls.show || scrubbing() && !miniScrubbing();
     fill.style.width = `${valid ? current / art.duration * 100 : 0}%`;
+    fill.style.height = miniScrubbing() ? '5px' : '3px';
+    mini.tabIndex = mini.hidden || art.isLock ? -1 : 0;
+    mini.style.setProperty('cursor', art.isLock ? 'not-allowed' : 'pointer', 'important');
+    mini.setAttribute('aria-disabled', String(!valid || art.isLock));
+    mini.setAttribute('aria-valuemax', String(valid ? art.duration : 0));
+    mini.setAttribute('aria-valuenow', String(current));
+    mini.setAttribute('aria-valuetext', hud.textContent);
     if (notice) notice.style.top = hud.hidden ? noticeTop : '48px';
     if (progress && valid) {
       progress.setAttribute('aria-valuemax', String(art.duration));
@@ -104,17 +124,24 @@ export function attachProgress(art: Artplayer) {
     if (seekable(art)) art.emit('setBar', 'played', clamp(art.currentTime / art.duration, 1));
   };
   const control = (visible: boolean) => {
-    if (!visible && scrubbing()) { art.controls.show = true; return; }
+    if (scrubbing()) {
+      if (visible && miniScrubbing()) { art.controls.show = false; return; }
+      if (!visible && !miniScrubbing()) { art.controls.show = true; return; }
+    }
     render();
   };
-  const preference = (event: Event) => { enabled = (event as CustomEvent<boolean>).detail; render(); };
+  const preference = (event: Event) => {
+    enabled = (event as CustomEvent<boolean>).detail;
+    if (!enabled && dragging?.bar === mini) finish();
+    render();
+  };
   const stop = (event: Event) => {
     if (event.cancelable) event.preventDefault();
     event.stopImmediatePropagation();
   };
-  const position = (point: { clientX: number; clientY: number }) => {
-    if (!progress || !seekable(art)) return;
-    const rect = progress.getBoundingClientRect();
+  const position = (point: { clientX: number; clientY: number }, target = dragging?.bar) => {
+    if (!target || !seekable(art)) return;
+    const rect = target.getBoundingClientRect();
     const size = art.isRotate ? rect.height : rect.width;
     if (size <= 0) return;
     const offset = art.isRotate ? point.clientY - rect.top : point.clientX - rect.left;
@@ -127,10 +154,12 @@ export function attachProgress(art: Artplayer) {
     setScrubbing(art, false);
   };
   const touchStart = (event: TouchEvent) => {
+    const target = event.currentTarget as HTMLElement;
+    if (target === mini && mini.hidden) return;
     if (art.isLock || !seekable(art) || event.touches.length !== 1) { finish(); stop(event); return; }
     stop(event);
-    dragging = { kind: 'touch', id: event.touches[0].identifier };
-    setScrubbing(art, true);
+    dragging = { kind: 'touch', id: event.touches[0].identifier, bar: target };
+    setScrubbing(art, true, target === mini);
     position(event.touches[0]);
   };
   const touchMove = (event: TouchEvent) => {
@@ -150,9 +179,11 @@ export function attachProgress(art: Artplayer) {
   };
   const mouseStart = (event: MouseEvent) => {
     if (event.button !== 0 || art.isLock || !seekable(art)) return;
+    if (event.currentTarget === mini && mini.hidden) return;
     stop(event);
-    dragging = { kind: 'mouse' };
-    setScrubbing(art, true);
+    const target = event.currentTarget as HTMLElement;
+    dragging = { kind: 'mouse', bar: target };
+    setScrubbing(art, true, target === mini);
     position(event);
   };
   const mouseMove = (event: MouseEvent) => {
@@ -168,14 +199,29 @@ export function attachProgress(art: Artplayer) {
     finish();
   };
   const click = (event: MouseEvent) => {
+    if (event.currentTarget === mini && mini.hidden) return;
     if (Date.now() < suppressClickUntil || art.isLock) { stop(event); return; }
-    stop(event); position(event);
+    stop(event); position(event, event.currentTarget as HTMLElement);
   };
   const key = (event: KeyboardEvent) => {
+    if (event.currentTarget === mini && mini.hidden) return;
     if (art.isLock || !seekable(art)) return;
     const targets: Record<string, number> = { ArrowLeft: art.currentTime - 5, ArrowRight: art.currentTime + 5, Home: 0, End: art.duration };
     if (!(event.key in targets)) return;
-    stop(event); art.controls.show = true; seekAndSync(art, targets[event.key]);
+    stop(event);
+    if (event.currentTarget !== mini) art.controls.show = true;
+    seekAndSync(art, targets[event.key]);
+  };
+  // Stop ArtPlayer's desktop hover/move handlers from revealing the full bar
+  // before a click/drag on the mini track has even started.
+  const miniHover = (event: MouseEvent) => {
+    if (mini.hidden || art.controls.show) return;
+    const rect = mini.getBoundingClientRect();
+    if (mini.contains(event.target as Node) || event.type === 'mouseenter' &&
+      event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom) {
+      event.stopImmediatePropagation();
+      root.classList.remove('art-hover');
+    }
   };
   const reset = () => { finish(); displayed = 0; render(); art.emit('setBar', 'played', 0); };
   const visibility = () => { if (document.hidden) finish(); };
@@ -188,11 +234,18 @@ export function attachProgress(art: Artplayer) {
     progress.setAttribute('tabindex', '0');
     progress.setAttribute('aria-label', '播放进度条');
     progress.setAttribute('aria-valuemin', '0');
-    progress.addEventListener('touchstart', touchStart, { capture: true, passive: false });
-    progress.addEventListener('mousedown', mouseStart, true);
-    progress.addEventListener('click', click, true);
-    progress.addEventListener('keydown', key, true);
   }
+  const bars = [progress, mini].filter((bar): bar is HTMLDivElement => !!bar);
+  bars.forEach(bar => {
+    bar.addEventListener('touchstart', touchStart, { capture: true, passive: false });
+    bar.addEventListener('mousedown', mouseStart, true);
+    bar.addEventListener('click', click, true);
+    bar.addEventListener('keydown', key, true);
+  });
+  mini.addEventListener('focus', render);
+  mini.addEventListener('blur', render);
+  root.addEventListener('mouseenter', miniHover, true);
+  root.addEventListener('mousemove', miniHover, true);
   window.addEventListener('touchmove', touchMove, { capture: true, passive: false });
   window.addEventListener('touchend', touchEnd, { capture: true, passive: false });
   window.addEventListener('touchcancel', finish, true);
@@ -221,11 +274,17 @@ export function attachProgress(art: Artplayer) {
         const old = previous[index];
         if (old == null) progress.removeAttribute(name); else progress.setAttribute(name, old);
       });
-      progress.removeEventListener('touchstart', touchStart, true);
-      progress.removeEventListener('mousedown', mouseStart, true);
-      progress.removeEventListener('click', click, true);
-      progress.removeEventListener('keydown', key, true);
     }
+    bars.forEach(bar => {
+      bar.removeEventListener('touchstart', touchStart, true);
+      bar.removeEventListener('mousedown', mouseStart, true);
+      bar.removeEventListener('click', click, true);
+      bar.removeEventListener('keydown', key, true);
+    });
+    mini.removeEventListener('focus', render);
+    mini.removeEventListener('blur', render);
+    root.removeEventListener('mouseenter', miniHover, true);
+    root.removeEventListener('mousemove', miniHover, true);
     window.removeEventListener('touchmove', touchMove, true);
     window.removeEventListener('touchend', touchEnd, true);
     window.removeEventListener('touchcancel', finish, true);
