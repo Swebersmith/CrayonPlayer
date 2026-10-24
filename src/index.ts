@@ -23,6 +23,8 @@ export { filterAdsFromM3U8, vodAdLoader } from './vod-ad-filter';
 export { attachVodHls, vodFilteredTime, vodSourceDuration, vodSourceTime } from './vod-playback';
 export type { VodAdFilterResult, VodAdRange } from './vod-segment-filter';
 export { filterVodAdSegments } from './vod-segment-filter';
+export type { NetworkOptions } from './network-settings';
+export type { PrefetchLanes } from './vod-network';
 
 type ArtOptions = ConstructorParameters<typeof Artplayer>[0];
 export interface CrayonPlayerOptions {
@@ -79,13 +81,13 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): Artplayer {
     }, blocked,
       result => {
         const seconds = result.removed.reduce((sum, range) => sum + range.end - range.start, 0);
-        art.setting.update({ name: 'blockAds', tooltip: seconds ? `已过滤 ${seconds.toFixed(1)} 秒` : result.reason === 'unsupported' ? '已开启 · 当前格式暂不支持过滤' : '已开启 · 未识别出可过滤广告' });
+        art.setting.update({ name: 'blockAds', html: '去广告', switch: blocked, tooltip: seconds ? `已过滤 ${seconds.toFixed(1)} 秒` : result.reason === 'unsupported' ? '已开启 · 当前格式暂不支持过滤' : '已开启 · 未识别出可过滤广告' });
       },
       prepareMedia ? url => prepareMedia(url,blocked) : undefined,
       (error) => {
         art.loading.show = false;
         art.notice.show = mediaPreparationNotice(error);
-      });
+      }, options.enhancements?.network);
     if (hls) attachVodRecovery(hls, () => {
       if (destroyed) return;
       art.loading.show = false;
@@ -107,17 +109,25 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): Artplayer {
     container: options.container, url: options.url, id: playerOptions.id || 'crayon-player',
     customType: { m3u8: hlsType, ...playerOptions.customType },
     settings: [
-      { name: 'blockAds', html: '去广告', tooltip: blocked ? '已开启' : '已关闭', onClick() {
-        if (!Hls.isSupported()) return '此浏览器不支持 Crayon 网页播放';
+      { name: 'blockAds', html: '去广告', switch: blocked, onSwitch(item) {
+        if (!Hls.isSupported()) {
+          art.notice.show = '此浏览器不支持 Crayon 网页播放';
+          return item.switch;
+        }
         resume = vodSourceTime(art.video);
-        blocked = !blocked;
+        blocked = !item.switch;
+        item.tooltip = '';
         hlsType(art.video, sourceUrl());
-        return blocked ? '已开启' : '已关闭';
+        return blocked;
       } },
-      { html: '跳过片头片尾', switch: skip.enabled, onSwitch: item => (skip.enabled = !item.switch) },
+      { name: 'crayonSkip', html: '跳过片头片尾', switch: skip.enabled, onSwitch: item => (skip.enabled = !item.switch) },
       { html: '设置片头', onClick() { skip.intro = vodSourceTime(art.video); return `${Math.floor(skip.intro)} 秒`; } },
       { html: '设置片尾', onClick() { skip.outro = Math.max(0, vodSourceDuration(art.video) - vodSourceTime(art.video)); return `${Math.floor(skip.outro)} 秒`; } },
-      { html: '删除跳过配置', onClick() { skip.enabled = false; skip.intro = 0; skip.outro = 0; return '已清除'; } },
+      { html: '删除跳过配置', onClick() {
+        skip.enabled = false; skip.intro = 0; skip.outro = 0;
+        art.setting.find('crayonSkip').switch = false;
+        return '已清除';
+      } },
       ...(playerOptions.settings || []),
     ],
     controls: [

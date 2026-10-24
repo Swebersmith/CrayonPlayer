@@ -54,7 +54,7 @@ it('restores stored source time after MSE preparation on phones and retains ad t
   player.emit('video:canplay',new Event('canplay'));
   expect(player.currentTime).toBe(27);
   const toggle=player.setting.find('blockAds');
-  toggle.onClick?.call(player,toggle,container,new Event('click'));
+  toggle.switch = toggle.onSwitch?.call(player,toggle,container,new Event('click'));
   expect(Hls.prototype.loadSource).toHaveBeenCalledWith(url);
   Object.defineProperty(player.video,'duration',{value:100,configurable:true});
   player.emit('video:canplay',new Event('canplay'));
