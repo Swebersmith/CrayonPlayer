@@ -1,5 +1,42 @@
 import { createCrayonPlayerCore } from '../src/core';
 import { touch } from './helpers';
+import { createCrayonPlayer } from '../src/index';
+import Hls from 'hls.js';
+
+it('changes download lanes and speed display through real settings without restarting HLS', async () => {
+  localStorage.clear();
+  URL.revokeObjectURL = jest.fn(); URL.createObjectURL = jest.fn(() => 'blob:test');
+  const pause = jest.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+  const load = jest.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
+  const supported = jest.spyOn(Hls, 'isSupported').mockReturnValue(true);
+  const source = jest.spyOn(Hls.prototype, 'loadSource').mockImplementation(() => undefined);
+  const media = jest.spyOn(Hls.prototype, 'attachMedia').mockImplementation(() => undefined);
+  const container = document.createElement('div'); document.body.appendChild(container);
+  const art = createCrayonPlayer({ container, url: 'https://media.test/video.m3u8', enhancements: { casting: false } });
+  try {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const hls = art.video.hls;
+    const setLanes = jest.spyOn(art.video.vodNetwork!, 'setLanes');
+    art.setting.show = true;
+    container.querySelector<HTMLElement>('[data-name="crayonPrefetch"]')!.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    art.setting.find('crayonPrefetch').selector!.find(item => item.value === 4)!.$item.click();
+    expect(setLanes).toHaveBeenCalledWith(4);
+    expect(art.video.hls).toBe(hls);
+    expect(source).toHaveBeenCalledTimes(1);
+    art.setting.find('crayonNetworkSpeed').$item.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const hud = container.querySelector<HTMLElement>('[data-crayon-network-speed]')!;
+    expect(hud.hidden).toBe(false);
+    expect(art.setting.find('crayonNetworkSpeed').switch).toBe(true);
+    expect(localStorage.getItem('crayon-player-prefetch-lanes')).toBe('4');
+    expect(localStorage.getItem('crayon-player-network-speed')).toBe('1');
+  } finally {
+    art.destroy(); container.remove();
+    pause.mockRestore(); load.mockRestore(); supported.mockRestore(); source.mockRestore(); media.mockRestore();
+    localStorage.clear();
+  }
+});
 
 it('releases the webpage fullscreen overlay when the independent player is destroyed',()=>{
   URL.revokeObjectURL=jest.fn();URL.createObjectURL=jest.fn(()=>'blob:test');

@@ -23,6 +23,8 @@ export { filterAdsFromM3U8, vodAdLoader } from './vod-ad-filter';
 export { attachVodHls, vodFilteredTime, vodSourceDuration, vodSourceTime } from './vod-playback';
 export type { VodAdFilterResult, VodAdRange } from './vod-segment-filter';
 export { filterVodAdSegments } from './vod-segment-filter';
+export type { NetworkOptions } from './network-settings';
+export type { PrefetchLanes } from './vod-network';
 
 type ArtOptions = ConstructorParameters<typeof Artplayer>[0];
 export interface CrayonPlayerOptions {
@@ -85,7 +87,7 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): Artplayer {
       (error) => {
         art.loading.show = false;
         art.notice.show = mediaPreparationNotice(error);
-      });
+      }, options.enhancements?.network);
     if (hls) attachVodRecovery(hls, () => {
       if (destroyed) return;
       art.loading.show = false;

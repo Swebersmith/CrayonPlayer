@@ -5,6 +5,7 @@ import { configureInlineVideo } from './inline-video';
 import { volumeSetting } from './player-ui';
 import { crayonPlayerPlugin, EnhancementOptions } from './plugin';
 import { miniProgressSetting } from './progress';
+import { networkSettings } from './network-settings';
 
 export type CrayonPlayerCoreOptions = ConstructorParameters<typeof Artplayer>[0];
 
@@ -27,7 +28,7 @@ export function createCrayonPlayerCore(
     gesture: false,
     fastForward: false,
     miniProgressBar: false,
-    settings: [volumeSetting(), miniProgressSetting(options.miniProgressBar), ...(options.settings || [])],
+    settings: [volumeSetting(), miniProgressSetting(options.miniProgressBar), ...networkSettings(enhancements.network), ...(options.settings || [])],
     plugins: [...(options.plugins || []), crayonPlayerPlugin(enhancements)],
   });
   if (art.video) configureInlineVideo(art.video);

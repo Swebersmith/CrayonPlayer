@@ -2,6 +2,9 @@ import Hls from 'hls.js';
 
 import { configureInlineVideo } from './inline-video';
 import { vodAdLoader } from './vod-ad-filter';
+import { prefetchPreference } from './network-settings';
+import { NetworkOptions } from './network-settings';
+import { VodNetwork } from './vod-network';
 import {
   filteredToSourceTime,
   sourceToFilteredTime,
@@ -26,10 +29,12 @@ export function attachVodHls(
   blockAds = true,
   onAdFilter?: (result: VodAdFilterResult) => void,
   prepareSource?: (url: string) => Promise<{ url: string; filter: VodAdFilterResult }>,
-  onPreparationError?: (error: unknown) => void
+  onPreparationError?: (error: unknown) => void,
+  networkOptions: NetworkOptions = {}
 ): Hls | null {
   configureInlineVideo(video);
   video.hls?.destroy();
+  video.vodNetwork?.destroy();
   delete video.hls;
   delete video.vodAdFilter;
   delete video.vodPlaybackUrl;
@@ -53,6 +58,7 @@ export function attachVodHls(
   // Only an explicit cast action installs a TV source and enables it again.
   video.disableRemotePlayback = true;
   const preparedPlayback = blockAds && !!prepareSource;
+  const network = new VodNetwork(video, prefetchPreference(networkOptions.prefetchLanes));
   const hls: Hls = new Hls({
     debug: false,
     enableWorker: true,
@@ -63,6 +69,7 @@ export function attachVodHls(
     backBufferLength: 30,
     maxBufferSize: 60 * 1000 * 1000,
     maxBufferHole: 0.3,
+    fLoader: network.fragmentLoader,
     // Filter actual ad segment groups while preserving retained HLS state.
     loader: blockAds && !preparedPlayback
       ? vodAdLoader(Hls.DefaultConfig.loader, result => {
@@ -73,6 +80,8 @@ export function attachVodHls(
       : Hls.DefaultConfig.loader,
   });
   video.hls = hls;
+  video.vodNetwork = network;
+  network.attach(hls);
   hls.on(Hls.Events.DESTROYING, () => {
     if (video.hls === hls) delete video.hls;
     if (video.vodNativeRequest === request) {
