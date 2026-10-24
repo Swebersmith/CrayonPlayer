@@ -67,9 +67,13 @@ export function attachNetworkSpeed(art: Artplayer, fallback = false) {
   const hud = document.createElement('div');
   hud.dataset.crayonNetworkSpeed = '';
   hud.setAttribute('aria-label', '下载速率');
-  hud.style.cssText = 'position:absolute;top:44px;left:var(--art-padding,10px);padding:4px 7px;border-radius:4px;background:#0009;color:white;font:12px/1.5 sans-serif;font-variant-numeric:tabular-nums;pointer-events:none;z-index:81';
+  hud.style.cssText = 'position:relative;align-self:flex-end;max-width:100%;height:18px;flex-shrink:0;margin:0 0 2px;padding:0 2px;color:white;font:11px/18px sans-serif;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none';
   const root = art.template.$player;
-  root.appendChild(hud);
+  // A dedicated row below the progress bar, above the control buttons. Keeping
+  // it in the bottom panel follows its layout in mobile and both fullscreen modes.
+  const progress = art.template.$progress;
+  if (progress?.parentElement) progress.insertAdjacentElement('afterend', hud);
+  else root.appendChild(hud);
   let timer: ReturnType<typeof setInterval> | undefined;
   let network = art.video.vodNetwork;
   let bytes = network?.bytes || 0;

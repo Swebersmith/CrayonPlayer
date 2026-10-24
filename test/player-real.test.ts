@@ -28,6 +28,9 @@ it('changes download lanes and speed display through real settings without resta
     await new Promise(resolve => setTimeout(resolve, 0));
     const hud = container.querySelector<HTMLElement>('[data-crayon-network-speed]')!;
     expect(hud.hidden).toBe(false);
+    expect(hud.previousElementSibling).toBe(art.template.$progress);
+    expect(hud.parentElement?.classList.contains('art-bottom')).toBe(true);
+    expect(hud.style.alignSelf).toBe('flex-end');
     expect(art.setting.find('crayonNetworkSpeed').switch).toBe(true);
     expect(localStorage.getItem('crayon-player-prefetch-lanes')).toBe('4');
     expect(localStorage.getItem('crayon-player-network-speed')).toBe('1');
@@ -35,6 +38,50 @@ it('changes download lanes and speed display through real settings without resta
     art.destroy(); container.remove();
     pause.mockRestore(); load.mockRestore(); supported.mockRestore(); source.mockRestore(); media.mockRestore();
     localStorage.clear();
+  }
+});
+
+it('shows explicit switch button states, toggles once, and synchronizes cleared skip settings', async () => {
+  localStorage.clear();
+  URL.revokeObjectURL = jest.fn(); URL.createObjectURL = jest.fn(() => 'blob:test');
+  const pause = jest.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+  const load = jest.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
+  const supported = jest.spyOn(Hls, 'isSupported').mockReturnValue(true);
+  const source = jest.spyOn(Hls.prototype, 'loadSource').mockImplementation(() => undefined);
+  const media = jest.spyOn(Hls.prototype, 'attachMedia').mockImplementation(() => undefined);
+  const container = document.createElement('div'); document.body.appendChild(container);
+  const art = createCrayonPlayer({ container, url: 'https://media.test/video.m3u8', enhancements: { casting: false }, skip: { enabled: true } });
+  const wait = () => new Promise(resolve => setTimeout(resolve, 0));
+  const button = (name: string) => art.setting.find(name).$item.querySelector<HTMLButtonElement>('button[role="switch"]')!;
+  try {
+    await wait(); await wait();
+    for (const [name, state] of [['blockAds', true], ['crayonSkip', true], ['crayonMiniProgress', false], ['crayonNetworkSpeed', false]] as const) {
+      expect(button(name).textContent).toBe(state ? '已开启' : '已关闭');
+      expect(button(name).getAttribute('aria-checked')).toBe(String(state));
+      button(name).click(); await wait();
+      expect(art.setting.find(name).switch).toBe(!state);
+      expect(button(name).textContent).toBe(state ? '已关闭' : '已开启');
+      expect(button(name).getAttribute('aria-checked')).toBe(String(!state));
+    }
+    // Clicking the nested button must not trigger a second reload/toggle.
+    expect(source).toHaveBeenCalledTimes(2);
+    button('crayonSkip').click(); await wait();
+    expect(button('crayonSkip').textContent).toBe('已开启');
+    const clear = art.setting.option.find(item => item.html === '删除跳过配置')!;
+    clear.$item.click(); await wait();
+    expect(art.setting.find('crayonSkip').switch).toBe(false);
+    expect(button('crayonSkip').textContent).toBe('已关闭');
+    const keydown = jest.fn(); art.template.$player.addEventListener('keydown', keydown);
+    button('crayonNetworkSpeed').dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    expect(keydown).not.toHaveBeenCalled();
+    // The same state should survive a settings re-render.
+    art.setting.update({ name: 'blockAds', html: '去广告', switch: false, tooltip: '' });
+    await wait();
+    expect(button('blockAds').textContent).toBe('已关闭');
+    expect(art.setting.find('blockAds').$item.querySelectorAll('button[role="switch"]')).toHaveLength(1);
+  } finally {
+    art.destroy(); container.remove(); localStorage.clear();
+    pause.mockRestore(); load.mockRestore(); supported.mockRestore(); source.mockRestore(); media.mockRestore();
   }
 });
 
