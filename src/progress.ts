@@ -15,6 +15,14 @@ export function formatDuration(value: number): string {
   return `${hours ? `${hours}小时` : ''}${hours || minutes ? `${minutes}分钟` : ''}${rest}秒`;
 }
 
+export function formatCompactDuration(value: number): string {
+  const seconds = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor(seconds % 3600 / 60);
+  const rest = String(seconds % 60).padStart(2, '0');
+  return hours ? `${hours}:${String(minutes).padStart(2, '0')}:${rest}` : `${minutes}:${rest}`;
+}
+
 function miniPreference(fallback = false) {
   try {
     const saved = localStorage.getItem(MINI_KEY);
@@ -94,7 +102,9 @@ export function attachProgress(art: Artplayer) {
     const valid = seekable(art);
     if (miniScrubbing() && !art.controls.show) root.classList.remove('art-hover');
     const current = valid ? clamp(displayed, art.duration) : 0;
-    hud.textContent = `${formatDuration(current)} / ${formatDuration(art.duration)}`;
+    const format = root.dataset.crayonCompact === 'true' ? formatCompactDuration : formatDuration;
+    hud.textContent = `${format(current)} / ${format(art.duration)}`;
+    hud.title = `${formatDuration(current)} / ${formatDuration(art.duration)}`;
     hud.hidden = !valid || art.isLock || !(art.controls.show || scrubbing() || document.activeElement === mini);
     mini.hidden = !valid || !enabled || art.controls.show || scrubbing() && !miniScrubbing();
     fill.style.width = `${valid ? current / art.duration * 100 : 0}%`;
@@ -255,6 +265,7 @@ export function attachProgress(art: Artplayer) {
   document.addEventListener('visibilitychange', visibility);
   root.addEventListener(SCRUB_EVENT, render);
   root.addEventListener(MINI_EVENT, preference);
+  root.addEventListener('crayon-layout-change', render);
   art.on('control', control);
   art.on('setBar', bar);
   art.on('seek', seek);
@@ -294,6 +305,7 @@ export function attachProgress(art: Artplayer) {
     document.removeEventListener('visibilitychange', visibility);
     root.removeEventListener(SCRUB_EVENT, render);
     root.removeEventListener(MINI_EVENT, preference);
+    root.removeEventListener('crayon-layout-change', render);
     art.off('control', control);
     art.off('setBar', bar);
     art.off('seek', seek);

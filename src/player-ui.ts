@@ -35,11 +35,13 @@ export function attachPlayerUi(art: Artplayer, showGestures = true) {
   let lastActivity = Date.now();
   let guideTimer: ReturnType<typeof setTimeout> | undefined;
   const guide = document.createElement('div');
+  guide.dataset.crayonGestureGuide = '';
   guide.setAttribute('aria-label', '触屏手势提示');
   guide.setAttribute('role', 'status');
   guide.hidden = true;
   guide.style.cssText = 'position:absolute;inset:0;z-index:12;pointer-events:none;background:linear-gradient(transparent,#0009);color:white;font:12px/1.6 sans-serif;text-align:center';
   const row = document.createElement('div');
+  row.dataset.crayonGestureRow = '';
   row.style.cssText = 'position:absolute;inset:25% 0 25%;display:grid;grid-template-columns:repeat(3,1fr);align-items:center';
   ['左侧双击\n快退 10 秒', '中间双击\n暂停 / 继续', '右侧双击\n快进 10 秒'].forEach((text, index) => {
     const cell = document.createElement('div');
@@ -48,6 +50,7 @@ export function attachPlayerUi(art: Artplayer, showGestures = true) {
     row.appendChild(cell);
   });
   const foot = document.createElement('div');
+  foot.dataset.crayonGestureFoot = '';
   foot.textContent = '左右滑动或拖动进度条调节进度 · 长按加速 · 右侧上下滑调节音量';
   foot.style.cssText = 'position:absolute;bottom:18%;width:100%;font-size:11px';
   guide.append(row, foot);
