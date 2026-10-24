@@ -1,6 +1,7 @@
 import { readMediaText } from '../../src/media-text';
 
 const SESSION_COOKIE = '__Host-crayon-session';
+const EMBED_COOKIE = '__Host-crayon-embed';
 const SESSION_SECONDS = 12 * 60 * 60;
 const encoder = new TextEncoder();
 const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -26,28 +27,74 @@ async function sessionKey(env) {
   const derived = await crypto.subtle.sign('HMAC', root, encoder.encode('crayon-viewer-key-v1:' + env.VIEWER_PASSWORD));
   return crypto.subtle.importKey('raw', derived, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
 }
-const sessionData = (request, payload) => encoder.encode('crayon-viewer-session-v1:' + new URL(request.url).origin + ':' + payload);
+const sessionData = (request, payload, embedded = false) => encoder.encode((embedded ? 'crayon-embed-session-v1:' : 'crayon-viewer-session-v1:') + new URL(request.url).origin + ':' + payload);
 const sessionCookie = (value, seconds) => `${SESSION_COOKIE}=${value}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${seconds}`;
+const embedCookie = (value, seconds) => `${EMBED_COOKIE}=${value}; Path=/; Secure; HttpOnly; SameSite=None; Partitioned; Max-Age=${seconds}`;
+const readCookie = (request, name) => (request.headers.get('Cookie') || '').split(';').map(part => part.trim()).find(part => part.startsWith(name + '='))?.slice(name.length + 1);
 
-async function createSession(request, env) {
-  const payload = btoa(JSON.stringify({ e: Math.floor(Date.now() / 1000) + SESSION_SECONDS, n: crypto.randomUUID() }));
-  const signature = new Uint8Array(await crypto.subtle.sign('HMAC', await sessionKey(env), sessionData(request, payload)));
-  return payload + '.' + Array.from(signature, byte => byte.toString(16).padStart(2, '0')).join('');
+async function createSession(request, env, embedded = false) {
+  const expiresAt = (Math.floor(Date.now() / 1000) + SESSION_SECONDS) * 1000;
+  const payload = btoa(JSON.stringify({ e: expiresAt / 1000, n: crypto.randomUUID() }));
+  const signature = new Uint8Array(await crypto.subtle.sign('HMAC', await sessionKey(env), sessionData(request, payload, embedded)));
+  return { token: payload + '.' + Array.from(signature, byte => byte.toString(16).padStart(2, '0')).join(''), expiresAt };
 }
 
-export async function authorizeViewer(request, env) {
+async function verifySession(request, env, token, embedded = false) {
   try {
-    const token = (request.headers.get('Cookie') || '').split(';').map(part => part.trim()).find(part => part.startsWith(SESSION_COOKIE + '='))?.slice(SESSION_COOKIE.length + 1);
-    if (!token || token.length > 512) return false;
+    if (!token || token.length > 512) return null;
     const [payload, signature, extra] = token.split('.');
-    if (!payload || extra || !/^[0-9a-f]{64}$/.test(signature || '')) return false;
+    if (!payload || extra || !/^[0-9a-f]{64}$/.test(signature || '')) return null;
     const bytes = Uint8Array.from(signature.match(/../g), hex => parseInt(hex, 16));
-    if (!await crypto.subtle.verify('HMAC', await sessionKey(env), bytes, sessionData(request, payload))) return false;
+    if (!await crypto.subtle.verify('HMAC', await sessionKey(env), bytes, sessionData(request, payload, embedded))) return null;
     const session = JSON.parse(atob(payload));
     const now = Math.floor(Date.now() / 1000);
     return Number.isInteger(session.e) && session.e > now && session.e <= now + SESSION_SECONDS + 60 &&
-      typeof session.n === 'string' && /^[0-9a-f-]{36}$/.test(session.n);
-  } catch { return false; }
+      typeof session.n === 'string' && /^[0-9a-f-]{36}$/.test(session.n) ? session : null;
+  } catch { return null; }
+}
+
+export async function authorizeViewer(request, env) {
+  return !!await verifySession(request, env, readCookie(request, SESSION_COOKIE));
+}
+
+export async function embeddedSession(request, env) {
+  const bearer = request.headers.get('Authorization')?.match(/^Bearer ([A-Za-z0-9+/=]+\.[0-9a-f]{64})$/)?.[1];
+  return await verifySession(request, env, readCookie(request, EMBED_COOKIE), true) ||
+    await verifySession(request, env, bearer, true);
+}
+
+async function validPassword(form, env) {
+  const [expected, supplied] = await Promise.all([
+    crypto.subtle.digest('SHA-256', encoder.encode(env.VIEWER_PASSWORD)),
+    crypto.subtle.digest('SHA-256', encoder.encode(form.get('password') || '')),
+  ]);
+  return crypto.subtle.timingSafeEqual(expected, supplied);
+}
+
+const authJson = (body, status = 200, cookie) => {
+  const headers = privateHeaders();
+  headers.set('Content-Type', 'application/json; charset=UTF-8');
+  if (cookie) for (const value of Array.isArray(cookie) ? cookie : [cookie]) headers.append('Set-Cookie', value);
+  return new Response(JSON.stringify(body), { status, headers });
+};
+
+async function handleEmbeddedAuth(request, env, action) {
+  if (action === 'session' && request.method === 'GET') {
+    const session = await embeddedSession(request, env) || await verifySession(request, env, readCookie(request, SESSION_COOKIE));
+    return session ? authJson({ expiresAt: session.e * 1000 }) : authJson({ error: 'UNAUTHORIZED' }, 401);
+  }
+  if (request.method !== 'POST' || action === 'session') return authJson({ error: 'METHOD_NOT_ALLOWED' }, 405);
+  if (request.headers.get('Origin') !== new URL(request.url).origin) return authJson({ error: 'INVALID_ORIGIN' }, 403);
+  if (action === 'logout') return authJson({ ok: true }, 200, [embedCookie('', 0), sessionCookie('', 0)]);
+  if (!request.headers.get('Content-Type')?.toLowerCase().startsWith('application/x-www-form-urlencoded')) return authJson({ error: 'INVALID_REQUEST' }, 415);
+  let form;
+  try { form = new URLSearchParams(await readMediaText(new Response(request.body), 32768, 10000)); }
+  catch { return authJson({ error: 'INVALID_REQUEST' }, 400); }
+  if (!await validPassword(form, env)) return authJson({ error: 'WRONG_PASSWORD' }, 401);
+  const session = await createSession(request, env, true);
+  // The fallback token is only returned to the same-origin password submission.
+  // It authorizes embedded preparation, never the regular protected homepage.
+  return authJson(session, 200, embedCookie(session.token, SESSION_SECONDS));
 }
 
 export function viewerLoginPage(request, message = '', status = 200, destination) {
@@ -74,6 +121,8 @@ const redirect = (location, cookie) => {
 
 export async function handleViewerAuth(request, env) {
   const url = new URL(request.url);
+  const embedded = url.pathname.match(/^\/auth\/embed\/(login|session|logout)$/);
+  if (embedded) return handleEmbeddedAuth(request, env, embedded[1]);
   if (!['/auth/login', '/auth/logout'].includes(url.pathname)) return null;
   if (url.pathname === '/auth/login' && ['GET', 'HEAD'].includes(request.method)) return viewerLoginPage(request);
   if (request.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: { ...Object.fromEntries(privateHeaders()), Allow: 'POST' } });
@@ -86,10 +135,6 @@ export async function handleViewerAuth(request, env) {
   try { form = new URLSearchParams(await readMediaText(new Response(request.body), 32768, 10000)); }
   catch { return viewerLoginPage(request, '登录请求无效，请重试', 400, '/'); }
   const next = returnPath(form.get('returnTo'), url.origin);
-  const [expected, supplied] = await Promise.all([
-    crypto.subtle.digest('SHA-256', encoder.encode(env.VIEWER_PASSWORD)),
-    crypto.subtle.digest('SHA-256', encoder.encode(form.get('password') || '')),
-  ]);
-  if (!crypto.subtle.timingSafeEqual(expected, supplied)) return viewerLoginPage(request, '密码不正确，请重试', 401, next);
-  return redirect(next, sessionCookie(await createSession(request, env), SESSION_SECONDS));
+  if (!await validPassword(form, env)) return viewerLoginPage(request, '密码不正确，请重试', 401, next);
+  return redirect(next, sessionCookie((await createSession(request, env)).token, SESSION_SECONDS));
 }

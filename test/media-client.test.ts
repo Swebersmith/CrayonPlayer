@@ -34,6 +34,18 @@ it('bounds the cache while browsing episodes',async()=>{
   await prepare('https://media.example/0.m3u8',true);
   expect(global.fetch).toHaveBeenCalledTimes(14);
 });
+
+it('sends an embed session only in the authorization header and locks again on expiry',async()=>{
+  const onUnauthorized=jest.fn();
+  const prepare=createMediaPreparer('/api/player/prepare',{accessToken:()=> 'short-lived-session',onUnauthorized});
+  await prepare('https://media.example/1.m3u8',true);
+  expect(global.fetch).toHaveBeenCalledWith('/api/player/prepare',expect.objectContaining({headers:{'Content-Type':'application/json',Authorization:'Bearer short-lived-session'}}));
+  jest.mocked(global.fetch).mockResolvedValueOnce({ok:false,status:401} as Response);
+  await expect(prepare('https://media.example/2.m3u8',true)).rejects.toMatchObject({code:'UNAUTHORIZED'});
+  expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  await prepare('https://media.example/1.m3u8',true);
+  expect(global.fetch).toHaveBeenCalledTimes(3);
+});
 it.each([
   {...result,url:undefined},
   {...result,filter:{...result.filter,removed:[{start:40,end:30}]}},

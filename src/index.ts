@@ -15,7 +15,7 @@ export { createCrayonPlayerCore } from './core';
 export { toggleCrayonFullscreen } from './fullscreen';
 export type { GestureOptions } from './gestures';
 export { attachGestures } from './gestures';
-export type { MediaPreparer, PreparedMedia } from './media-client';
+export type { MediaPreparer, PreparedMedia, MediaPreparerAuth } from './media-client';
 export { createMediaPreparer, MediaPreparationError, mediaPreparationNotice } from './media-client';
 export type { EnhancementOptions } from './plugin';
 export { crayonPlayerPlugin } from './plugin';

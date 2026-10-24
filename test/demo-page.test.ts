@@ -1,8 +1,9 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-let listeners: EventListener[];
+let listeners: {type:string;listener:EventListener}[];
 let create: jest.Mock;
+const originalFetch = global.fetch;
 beforeEach(()=>{
   jest.resetModules();
   const html=readFileSync(join(__dirname,'../index.html'),'utf8');
@@ -12,27 +13,32 @@ beforeEach(()=>{
   listeners=[];
   const add=window.addEventListener.bind(window);
   jest.spyOn(window,'addEventListener').mockImplementation((type,listener,options)=>{
-    if(type==='pagehide')listeners.push(listener as EventListener);
+    if(type==='pagehide'||type==='pageshow')listeners.push({type,listener:listener as EventListener});
     add(type,listener,options);
   });
   create=jest.fn(()=>({destroy:jest.fn()}));
-  jest.doMock('../src/index',()=>({createCrayonPlayer:create}));
+  jest.doMock('../src/index',()=>({createCrayonPlayer:create,createMediaPreparer:jest.fn(()=>jest.fn())}));
+  global.fetch=jest.fn(async()=>({ok:true,json:async()=>({expiresAt:Date.now()+3600000})})) as jest.Mock;
+  sessionStorage.clear();
   Object.assign(global,{__CRAYON_PREPARE_ENDPOINT__:'/api/player/prepare'});
 });
 afterEach(()=>{
   window.dispatchEvent(new Event('pagehide'));
-  listeners.forEach(listener=>window.removeEventListener('pagehide',listener));
+  listeners.forEach(({type,listener})=>window.removeEventListener(type,listener));
   jest.restoreAllMocks();
+  global.fetch=originalFetch;
   window.history.replaceState(null,'','/');
   document.body.innerHTML='';
 });
 
-it('loads the supplied media in the independent player with server filtering',()=>{
+it('authenticates before loading embedded media and keeps filtering authenticated',async()=>{
   const source='https://media.example/episode.m3u8?token=a+b&part=2';
   window.history.replaceState(null,'','/parse?'+new URLSearchParams({url:source}));
   require('../demo');
+  expect(create).not.toHaveBeenCalled();
+  await new Promise(resolve=>setTimeout(resolve,0));
   expect(create).toHaveBeenCalledTimes(1);
-  expect(create).toHaveBeenCalledWith(expect.objectContaining({url:source,prepareMedia:'/api/player/prepare',autoplay:false}));
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({url:source,prepareMedia:expect.any(Function),autoplay:false}));
   expect(document.body.dataset.embedded).toBe('true');
 });
 

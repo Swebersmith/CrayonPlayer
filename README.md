@@ -88,7 +88,15 @@ playerUrl.searchParams.set('url', 'https://media.example/video.m3u8?token=abc&ep
 
 `/parse` 默认只显示播放器；添加 `&embed=0` 可显示完整页面。首页也支持 `/?url=编码后的视频地址`。纯静态部署使用首页查询参数，首页生成链接时会保留所在子目录。
 
-此入口接收媒体地址，不解析任意视频网站网页。首次访问只需在网页输入 `VIEWER_PASSWORD`，不能将密码或 `MEDIA_SECRET` 拼进 URL。跨站 iframe 的 Cookie 登录受浏览器限制；必要时使用独立打开或同源 SDK 接入。登录会保留原播放链接的地址参数。
+此入口接收媒体地址，不解析任意视频网站网页。首次访问只需在网页输入 `VIEWER_PASSWORD`，不能将密码或 `MEDIA_SECRET` 拼进 URL。登录会保留原播放链接的地址参数。
+
+**跨站 iframe 密码登录**：`/parse?url=...` 或 `embed=1` 可在播放器内直接输入密码。登录优先保存在 `Secure; HttpOnly; SameSite=None; Partitioned` Cookie 中，有效 12 小时；同一宿主网站下换集、刷新和重新创建 iframe 可复用登录。普通首页仍使用原有的 `SameSite=Lax` 登录 Cookie，两个入口的登录互相隔离。
+
+旧版 WebView 等环境不接受 Cookie 时，播放器只将限时嵌入凭证保存在自己源下的 `sessionStorage`，在同一标签页内刷新、换集或重新创建 iframe 时复用。原始密码只经 HTTPS 发送给播放器的认证接口，不写入 localStorage/sessionStorage、URL、日志或跨窗口消息；外层网站无法通过跨源 DOM 读取密码或凭证。不要把播放器部署在不受信任网页的同一源下。若浏览器同时禁止 Cookie 和站点存储，则只能保持当前页面内存中的登录，刷新或重建 iframe 仍需重新输入。
+
+嵌入凭证仅用于嵌入登录检查和媒体准备，不能当作首页登录 Cookie 使用；过期或更换 `VIEWER_PASSWORD` 后失效。设置 → 退出登录清除当前嵌入环境的登录状态。宿主无需增加服务端；若设置 iframe sandbox，需要允许 `allow-scripts allow-same-origin`，并保持播放器与宿主跨源。`allow` 需包含所需的 fullscreen / autoplay / picture-in-picture 权限。
+
+嵌入界面及其编译后的 JS/CSS 为公开启动文件，不包含密钥；媒体准备接口仍要求有效登录，认证成功前不会加载视频。无需修改现有两个 Worker secrets。
 
 独立部署 **无需数据库、KV、D1 或视频网站账户**。签名媒体链接无需数据库保存，观看进度使用当前浏览器的 localStorage，不会跨设备自动同步。
 

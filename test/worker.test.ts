@@ -23,7 +23,7 @@ it('runs the standalone deployment with authenticated pages/preparation and cook
   const code=esbuild.buildSync({entryPoints:['examples/cloudflare/worker.mjs'],bundle:true,write:false,format:'esm',platform:'browser'}).outputFiles[0].text;
   const fixture=readFileSync(join(__dirname,'__fixtures__/baofeng/bear-episode1.m3u8'),'utf8');
   const assetUrls:string[]=[];
-  const runtime=new Miniflare(convertV4MiniflareOptions({workers:[{
+  const runtime=new Miniflare(convertV4MiniflareOptions({cf:false,workers:[{
     name:'crayon-player',
     compatibilityDate:'2026-10-23',modules:true,script:code,
     bindings:{MEDIA_SECRET:'development-media-secret-for-tests',VIEWER_PASSWORD:'viewer-password'},
@@ -42,7 +42,7 @@ it('runs the standalone deployment with authenticated pages/preparation and cook
     expect(await gate.text()).toContain('name="password"');
     const auth = await loginCookie(runtime);
     expect((await runtime.dispatchFetch('https://player.example/',{headers:{Cookie:auth}})).status).toBe(200);
-    expect(await (await runtime.dispatchFetch('https://player.example/parse?url=https%3A%2F%2Fmedia.example%2Fepisode.m3u8')).text()).toContain('输入访问密码');
+    expect(await (await runtime.dispatchFetch('https://player.example/parse?url=https%3A%2F%2Fmedia.example%2Fepisode.m3u8')).text()).toContain('Crayon Player');
     for(const path of ['/parse','/parse/']){
       const parsed=await runtime.dispatchFetch('https://player.example'+path+'?url=https%3A%2F%2Fmedia.example%2Fepisode.m3u8',{headers:{Cookie:auth}});
       expect(parsed.status).toBe(200);
@@ -75,7 +75,7 @@ it('runs non-Baofeng nested playlists and distinguishes blocked upstreams in wor
   const code=esbuild.buildSync({entryPoints:['examples/cloudflare/worker.mjs'],bundle:true,write:false,format:'esm',platform:'browser'}).outputFiles[0].text;
   const master=readFileSync(join(__dirname,'__fixtures__/zuid/bear-episode1-master.m3u8'),'utf8');
   const media=readFileSync(join(__dirname,'__fixtures__/zuid/bear-episode1.m3u8'),'utf8');
-  const runtime=new Miniflare(convertV4MiniflareOptions({workers:[{
+  const runtime=new Miniflare(convertV4MiniflareOptions({cf:false,workers:[{
     name:'crayon-zuid',compatibilityDate:'2026-10-23',modules:true,script:code,
     bindings:{MEDIA_SECRET:'development-media-secret-for-tests',VIEWER_PASSWORD:'viewer-password'},
     serviceBindings:{ASSETS:()=>new NativeResponse('Crayon Player')},
@@ -100,7 +100,7 @@ it('runs non-Baofeng nested playlists and distinguishes blocked upstreams in wor
 
 function authRuntime(password = 'viewer-password', clockOffset = 0) {
   const code = esbuild.buildSync({ entryPoints: ['examples/cloudflare/worker.mjs'], bundle: true, write: false, format: 'esm', platform: 'browser' }).outputFiles[0].text;
-  return new Miniflare(convertV4MiniflareOptions({ workers: [{
+  return new Miniflare(convertV4MiniflareOptions({ cf: false, workers: [{
     name: 'crayon-auth', compatibilityDate: '2026-10-23', modules: true,
     script: (clockOffset ? `Date.now = () => ${Date.now() + clockOffset};\n` : '') + code,
     bindings: { MEDIA_SECRET: 'development-media-secret-for-tests', VIEWER_PASSWORD: password },
@@ -173,5 +173,68 @@ it('rejects expired sessions and invalidates sessions when the access password c
     expect(await (await rotated.dispatchFetch('https://player.example/', { headers: { Cookie: cookie } })).text()).toContain('输入访问密码');
     expect((await login(rotated, 'viewer-password')).status).toBe(401);
     expect((await login(rotated, 'new-viewer-password')).status).toBe(303);
+  } finally { await Promise.all([runtime.dispose(), oldClock.dispose(), rotated.dispose()]); }
+});
+
+const embedLogin = (runtime:any, password = 'viewer-password', origin = 'https://player.example') => runtime.dispatchFetch('https://player.example/auth/embed/login', {
+  method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ password }).toString(),
+});
+
+it('issues private partitioned embed sessions, preserves a strict origin check and never grants homepage access', async () => {
+  const runtime = authRuntime();
+  try {
+    expect((await embedLogin(runtime, 'wrong')).status).toBe(401);
+    expect((await embedLogin(runtime, 'viewer-password', 'https://host.example')).status).toBe(403);
+    expect((await embedLogin(runtime, 'viewer-password', 'null')).status).toBe(403);
+    expect((await runtime.dispatchFetch('https://player.example/auth/embed/login', { method: 'POST' })).status).toBe(403);
+    expect((await runtime.dispatchFetch('https://player.example/auth/embed/login')).status).toBe(405);
+    expect((await runtime.dispatchFetch('https://player.example/auth/embed/session')).status).toBe(401);
+    const logged = await embedLogin(runtime);
+    expect(logged.status).toBe(200);
+    expect(logged.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(logged.headers.get('Access-Control-Allow-Origin')).toBeNull();
+    const { token, expiresAt } = await logged.json();
+    expect(token).not.toContain('viewer-password');
+    expect(expiresAt).toBeGreaterThan(Date.now() + 11 * 3600000);
+    const cookie = logged.headers.get('Set-Cookie')!;
+    for (const flag of ['__Host-crayon-embed=', 'Secure', 'HttpOnly', 'SameSite=None', 'Partitioned', 'Path=/', 'Max-Age=43200']) expect(cookie).toContain(flag);
+    expect(cookie).not.toContain('Domain=');
+    const headers = { Authorization: 'Bearer ' + token };
+    const cookieHeaders = { Cookie: cookie.split(';')[0] };
+    for (const sessionHeaders of [headers, cookieHeaders]) {
+      expect((await runtime.dispatchFetch('https://player.example/auth/embed/session', { headers: sessionHeaders })).status).toBe(200);
+      expect(await (await runtime.dispatchFetch('https://player.example/', { headers: sessionHeaders })).text()).toContain('输入访问密码');
+      const prepare = await runtime.dispatchFetch('https://player.example/api/player/prepare', { method: 'POST', headers: { ...sessionHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ url: 'https://media.example/movie.mp4', blockAds: true }) });
+      expect(prepare.status).toBe(200);
+    }
+    expect((await runtime.dispatchFetch('https://other.example/auth/embed/session', { headers })).status).toBe(401);
+    expect((await runtime.dispatchFetch('https://player.example/auth/embed/session?token=' + encodeURIComponent(token))).status).toBe(401);
+    expect((await runtime.dispatchFetch('https://player.example/auth/embed/session', { headers: { Authorization: 'Bearer ' + token.slice(0, -1) + (token.endsWith('0') ? '1' : '0') } })).status).toBe(401);
+    const normal = await loginCookie(runtime);
+    expect((await runtime.dispatchFetch('https://player.example/auth/embed/session', { headers: { Cookie: normal } })).status).toBe(200);
+    const logout = await runtime.dispatchFetch('https://player.example/auth/embed/logout', { method: 'POST', headers: { Origin: 'https://player.example' } });
+    expect(logout.status).toBe(200);
+    expect(logout.headers.get('Set-Cookie')).toContain('Partitioned; Max-Age=0');
+    expect((await runtime.dispatchFetch('https://player.example/auth/embed/logout', { method: 'POST', headers: { Origin: 'https://host.example' } })).status).toBe(403);
+    for (const path of ['/parse?url=https://media.example/a.m3u8', '/?embed=1', '/assets/index-example.js']) {
+      expect(await (await runtime.dispatchFetch('https://player.example' + path)).text()).toContain('Authenticated player');
+    }
+    expect(await (await runtime.dispatchFetch('https://player.example/parse?embed=0')).text()).toContain('输入访问密码');
+    expect(await (await runtime.dispatchFetch('https://player.example/parse?embed=0', { headers: { 'Sec-Fetch-Dest': 'iframe' } })).text()).toContain('Authenticated player');
+  } finally { await runtime.dispose(); }
+});
+
+it('expires embedded bearer and cookie sessions and invalidates them on password rotation', async () => {
+  const runtime = authRuntime();
+  const oldClock = authRuntime('viewer-password', -13 * 3600000);
+  const rotated = authRuntime('new-viewer-password');
+  try {
+    const expired = await (await embedLogin(oldClock)).json();
+    expect((await runtime.dispatchFetch('https://player.example/auth/embed/session', { headers: { Authorization: 'Bearer ' + expired.token } })).status).toBe(401);
+    const logged = await embedLogin(runtime);
+    const { token } = await logged.json();
+    expect((await rotated.dispatchFetch('https://player.example/auth/embed/session', { headers: { Authorization: 'Bearer ' + token } })).status).toBe(401);
+    expect((await rotated.dispatchFetch('https://player.example/auth/embed/session', { headers: { Cookie: logged.headers.get('Set-Cookie')!.split(';')[0] } })).status).toBe(401);
+    expect((await embedLogin(rotated, 'new-viewer-password')).status).toBe(200);
   } finally { await Promise.all([runtime.dispose(), oldClock.dispose(), rotated.dispose()]); }
 });
