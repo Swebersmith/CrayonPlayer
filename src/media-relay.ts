@@ -105,7 +105,13 @@ async function rewrite(content: string, base: string, origin: string, grant: Gra
   const cached = new Map<string,Promise<string>>();
   const proxy = (value: string, mode: Grant['m'], keyUri = false) => {
     if (keyUri && /^(?:data|skd|urn):/i.test(value)) return Promise.resolve(value);
-    const url = publicUrl(value,base).href;
+    const target = publicUrl(value,base);
+    const url = target.href;
+    // This Changzhang CDN permits browser CORS but rejects overseas relay
+    // egress. Keep its signed TS URLs on the viewer's network, after filtering
+    // the playlist. Keys, playlists and all other origins still use the relay.
+    if (mode === 'r' && !keyUri && target.origin === 'https://vip.dytt-tvs.com' && /\.ts$/i.test(target.pathname))
+      return Promise.resolve(url);
     const id = mode + url;
     const existing = cached.get(id);
     if (existing) return existing;

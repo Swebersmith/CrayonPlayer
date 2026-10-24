@@ -7,6 +7,7 @@ import { runInThisContext } from 'vm';
 
 import { adFixture } from './__fixtures__/vod-playlist';
 import { handleMediaRelay } from '../src/media-relay';
+import { filterVodAdSegments } from '../src/vod-segment-filter';
 
 Object.assign(global, runInThisContext('({Response,Request,Headers,ReadableStream,TextEncoder,TextDecoder,btoa,atob})'));
 Object.defineProperty(global,'crypto',{value:webcrypto,configurable:true});
@@ -128,4 +129,56 @@ it('distinguishes upstream refusal from an invalid playlist without disclosing r
   expect(await denied.json()).toEqual({error:{code:'UPSTREAM_UNAVAILABLE',upstreamStatus:403}});
   (global.fetch as jest.Mock).mockResolvedValueOnce(new Response('<html>provider challenge</html>'));
   expect(await (await prepare())!.json()).toEqual({error:{code:'INVALID_PLAYLIST'}});
+});
+
+it('keeps the reported Changzhang programme on the viewer network after filtering, even if relay fragments are region-blocked',async()=>{
+  playlist = readFileSync(join(__dirname,'__fixtures__/changzhang/20251024-upper.m3u8'),'utf8');
+  const source = 'https://svip.czzyplay.com/fixtures/changzhang/upper.m3u8';
+  (global.fetch as jest.Mock).mockImplementation(async (input:string)=>String(input)===source
+    ? new Response(playlist)
+    : new Response('The region has been denied.',{status:403}));
+  const ready = await (await prepare({url:source}))!.json();
+  expect(ready.filter.reason).toBe('filtered');
+  expect(ready.filter.removed).toHaveLength(1);
+  expect(ready.filter.removed[0].end-ready.filter.removed[0].start).toBeCloseTo(4.866);
+  const response = (await get(ready.url))!;
+  expect(response.status).toBe(200);
+  const content = await response.text();
+  const retained = content.split('\n').filter(line=>line.startsWith('https://'));
+  const expected = filterVodAdSegments(playlist,source).playlist.split('\n').filter(line=>line.startsWith('https://'));
+  expect(retained).toEqual(expected);
+  expect(retained).toHaveLength(1150);
+  expect(retained.every(url=>url.startsWith('https://vip.dytt-tvs.com/'))).toBe(true);
+  // The fixture's hash/query is byte-for-byte intact; no website secret or
+  // media relay URL is sent to this CDN, and all 1,150 programme fragments stay.
+  expect(retained[0]).toBe(playlist.split('\n').find(line=>line.startsWith('https://')));
+  expect(content).not.toContain(secret);
+  expect((global.fetch as jest.Mock).mock.calls.every(([url])=>String(url)===source)).toBe(true);
+});
+
+it('limits direct delivery to exact HTTPS CDN TS fragments while relaying keys, variants and other origins',async()=>{
+  const direct='https://vip.dytt-tvs.com/video/first.ts?hash=a%2Fb&x=1';
+  const protectedUris=[
+    'http://vip.dytt-tvs.com/video/insecure.ts',
+    'https://vip.dytt-tvs.com:444/video/port.ts',
+    'https://vip.dytt-tvs.com.other.example/video/lookalike.ts',
+    'https://other.example/video/other.ts',
+    'https://vip.dytt-tvs.com/video/init.mp4',
+  ];
+  playlist='#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n'+
+    '#EXT-X-KEY:METHOD=AES-128,URI="https://vip.dytt-tvs.com/keys/key.ts"\n'+
+    [direct,...protectedUris].map(url=>'#EXTINF:6,\n'+url+'\n').join('')+'#EXT-X-ENDLIST\n';
+  const ready=await (await prepare())!.json();
+  const content=await (await get(ready.url))!.text();
+  const urls=content.split('\n').filter(line=>line.startsWith('https://'));
+  expect(urls[0]).toBe(direct);
+  expect(urls.slice(1).map(grantOf).map(item=>item.u)).toEqual(protectedUris);
+  const key=content.match(/URI="([^"]+)"/)![1];
+  expect(grantOf(key).u).toBe('https://vip.dytt-tvs.com/keys/key.ts');
+  playlist='#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",URI="https://vip.dytt-tvs.com/audio/index.m3u8"\n'+
+    '#EXT-X-STREAM-INF:BANDWIDTH=10000,AUDIO="a"\nhttps://vip.dytt-tvs.com/video/index.m3u8\n';
+  const master=await (await get((await (await prepare())!.json()).url))!.text();
+  const variant=master.split('\n').find(line=>line.startsWith('https://'))!;
+  expect(grantOf(variant)).toMatchObject({u:'https://vip.dytt-tvs.com/video/index.m3u8',m:'p',b:false});
+  expect(grantOf(master.match(/URI="([^"]+)"/)![1]).m).toBe('p');
 });
