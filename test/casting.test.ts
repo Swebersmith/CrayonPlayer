@@ -1,5 +1,6 @@
 import { attachCasting } from '../src/casting';
 import { fakeArt } from './helpers';
+import { PLAYBACK_POLICY_CHANGE } from '../src/relay-settings';
 
 let art: ReturnType<typeof fakeArt>;
 let dispose: () => void;
@@ -111,4 +112,26 @@ it('switches AirPlay to the prepared native playlist instead of handing off the 
   expect(art.video.vodAdFilter).toBe(filter);
   art.video.dispatchEvent(new Event('loadedmetadata'));
   expect(art.currentTime).toBe(62);
+});
+
+it('invalidates old cast preparations and pending pickers immediately when relay/filter policy changes',async()=>{
+  dispose();
+  let relay=true;
+  let resolveOld!: (value:{url:string})=>void;
+  const prepareSource=jest.fn(()=>relay?new Promise<{url:string}>(resolve=>{resolveOld=resolve;}):Promise.resolve({url:source.url}));
+  dispose=attachCasting(art,{getSource:()=>source,prepareSource,getHint:()=>relay?'中转已开启':'中转已关闭，电视直连原始片源'});
+  const trigger=document.querySelector<HTMLButtonElement>('[aria-label="投屏"]')!;
+  trigger.click();
+  relay=false;art.template.$player.dispatchEvent(new Event(PLAYBACK_POLICY_CHANGE));
+  trigger.click();await flush();
+  resolveOld({url:'https://tv.example/stale-filtered.m3u8'});await flush();
+  expect(document.querySelector('[aria-label="投屏方式"]')!.textContent).toContain('中转已关闭');
+  button('Chromecast / Google Cast').click();await flush();
+  expect(load).toHaveBeenLastCalledWith(expect.objectContaining({media:expect.objectContaining({contentId:source.url})}));
+  let pickerDone!:()=>void;
+  context.requestSession.mockReturnValue(new Promise<void>(resolve=>{pickerDone=resolve;}));
+  button('Chromecast / Google Cast').click();
+  art.template.$player.dispatchEvent(new Event(PLAYBACK_POLICY_CHANGE));
+  const count=load.mock.calls.length;pickerDone();await flush();
+  expect(load).toHaveBeenCalledTimes(count);
 });

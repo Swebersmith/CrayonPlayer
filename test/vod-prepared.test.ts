@@ -2,7 +2,7 @@ import Hls from 'hls.js';
 
 import { MediaPreparationError } from '../src/media-client';
 import { adFixture } from './__fixtures__/vod-playlist';
-import { attachVodHls, attachVodRecovery, setHlsAlternative, vodSourceTime } from '../src/vod-playback';
+import { attachVodFile, attachVodHls, attachVodRecovery, setHlsAlternative, vodSourceTime } from '../src/vod-playback';
 import { filterVodAdSegments } from '../src/vod-segment-filter';
 
 const original = 'https://media.example/episode.m3u8';
@@ -168,14 +168,16 @@ it('does not fetch or start the unfiltered source while waiting and ignores prep
   expect(video.querySelector('source')).toBeNull();
 });
 
-it('keeps ads only when explicitly disabled and never prepares the raw playback', () => {
+it('relays an unfiltered playlist when ads are disabled but a preparer is supplied', async () => {
   jest.spyOn(video, 'canPlayType').mockReturnValue('maybe');
-  const prepare = jest.fn();
+  const prepare = jest.fn(async()=>({url:filtered,filter:{playlist:'',originalDuration:0,removed:[],reason:'unsupported' as const}}));
   attachVodHls(video, original, jest.fn(), false, undefined, prepare);
+  await flush();
   expect(video.src).toBe('');
   expect(video.querySelector('source')).toBeNull();
-  expect(Hls.prototype.loadSource).toHaveBeenCalledWith(original);
-  expect(prepare).not.toHaveBeenCalled();
+  expect(Hls.prototype.loadSource).toHaveBeenCalledWith(filtered);
+  expect(prepare).toHaveBeenCalledWith(original);
+  expect(video.hls!.config.loader).toBe(Hls.DefaultConfig.loader);
 });
 
 it('attaches the real HLS ManagedMediaSource as the only source and keeps inline controls',()=>{
@@ -213,4 +215,14 @@ it('stops repeated fatal network recovery and reports failure without native han
   expect(failed).toHaveBeenCalledTimes(1);
   expect(video.hls).toBeUndefined();
   expect(video.querySelector('source')).toBeNull();
+});
+
+it('ignores pending MP4 preparation after switching relay off or changing episodes',async()=>{
+  let resolve!: (value:{url:string;filter:typeof filter})=>void;
+  attachVodFile(video,'https://media.example/old.mp4',()=>new Promise(done=>{resolve=done;}));
+  expect(video.vodNativePending).toBe(true);expect(video.hasAttribute('src')).toBe(false);
+  attachVodFile(video,'https://media.example/new.mp4');
+  resolve({url:'https://tv.example/old-relay.mp4',filter});await flush();
+  expect(video.src).toBe('https://media.example/new.mp4');
+  expect(video.vodNativePending).toBe(false);
 });

@@ -22,7 +22,7 @@ export class MediaPreparationError extends Error {
 }
 
 export function mediaPreparationNotice(error: unknown): string {
-  return error instanceof MediaPreparationError ? error.message : '去广告清单准备失败，请稍后重试或更换片源';
+  return error instanceof MediaPreparationError ? error.message : '播放清单准备失败，请稍后重试或更换片源';
 }
 
 /** One bounded cache is shared by local playback and casting for this adapter. */
@@ -46,8 +46,8 @@ export function createMediaPreparer(endpoint = '/api/player/prepare', auth?: Med
           signal: controller.signal,
         });
       } catch {
-        if (controller.signal.aborted) throw new MediaPreparationError('去广告服务响应超时，请稍后重试','SERVICE_TIMEOUT');
-        throw new MediaPreparationError('无法连接去广告服务，请检查网络后重试','SERVICE_UNREACHABLE');
+        if (controller.signal.aborted) throw new MediaPreparationError('服务器中转响应超时，请稍后重试','SERVICE_TIMEOUT');
+        throw new MediaPreparationError('无法连接中转服务，请检查网络后重试','SERVICE_UNREACHABLE');
       } finally { clearTimeout(timer); }
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) {
@@ -55,7 +55,7 @@ export function createMediaPreparer(endpoint = '/api/player/prepare', auth?: Med
           auth?.onUnauthorized();
           throw new MediaPreparationError('登录已失效或无权准备清单，请重新输入访问密码后重试','UNAUTHORIZED');
         }
-        if (response.status === 503) throw new MediaPreparationError('去广告服务未就绪，请检查服务配置或稍后重试','SERVICE_UNAVAILABLE');
+        if (response.status === 503) throw new MediaPreparationError('服务器中转未就绪，请检查服务配置或稍后重试','SERVICE_UNAVAILABLE');
         let code: string | undefined;
         let upstreamStatus: number | undefined;
         try {
@@ -66,11 +66,11 @@ export function createMediaPreparer(endpoint = '/api/player/prepare', auth?: Med
         } catch { /* Older servers may return plain text. */ }
         const messages: Record<string, string> = {
           UPSTREAM_TIMEOUT: '片源清单读取超时，请稍后重试或更换片源',
-          UPSTREAM_UNAVAILABLE: `去广告服务无法读取片源清单${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}，请重试或更换片源`,
+          UPSTREAM_UNAVAILABLE: `中转服务无法读取片源清单${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}，请重试或更换片源`,
           INVALID_PLAYLIST: '片源返回的内容不是有效播放清单，请更换片源',
           INVALID_REQUEST: '播放地址或请求无效，请重新选集或更换片源',
         };
-        throw new MediaPreparationError(messages[code || ''] || '去广告服务暂时不可用，请稍后重试；若提示持续出现，请检查登录和服务配置', code || 'SERVICE_ERROR');
+        throw new MediaPreparationError(messages[code || ''] || '中转服务暂时不可用，请稍后重试；若提示持续出现，请检查登录和服务配置', code || 'SERVICE_ERROR');
       }
       let result: PreparedMedia;
       try { result = await response.json() as PreparedMedia; }

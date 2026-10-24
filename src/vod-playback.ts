@@ -22,16 +22,7 @@ declare global {
   }
 }
 
-export function attachVodHls(
-  video: HTMLVideoElement,
-  url: string,
-  onUnsupported: () => void,
-  blockAds = true,
-  onAdFilter?: (result: VodAdFilterResult) => void,
-  prepareSource?: (url: string) => Promise<{ url: string; filter: VodAdFilterResult }>,
-  onPreparationError?: (error: unknown) => void,
-  networkOptions: NetworkOptions = {}
-): Hls | null {
+function resetPlayback(video: HTMLVideoElement) {
   configureInlineVideo(video);
   video.hls?.destroy();
   video.vodNetwork?.destroy();
@@ -46,6 +37,45 @@ export function attachVodHls(
   const request = {};
   video.vodNativeRequest = request;
   video.vodNativePending = false;
+  return request;
+}
+
+/** MP4 uses the same independent relay policy and stale-request protection. */
+export function attachVodFile(
+  video: HTMLVideoElement,
+  url: string,
+  prepareSource?: (url: string) => Promise<{ url: string; filter: VodAdFilterResult }>,
+  onPreparationError?: (error: unknown) => void
+) {
+  const request = resetPlayback(video);
+  const load = (playbackUrl: string) => {
+    if (video.vodNativeRequest !== request) return;
+    video.vodNativePending = false;
+    video.vodPlaybackUrl = playbackUrl;
+    video.src = playbackUrl;
+  };
+  if (!prepareSource) { load(url); return; }
+  video.vodNativePending = true;
+  const failed = (error: unknown) => {
+    if (video.vodNativeRequest !== request) return;
+    video.vodNativePending = false;
+    onPreparationError?.(error);
+  };
+  try { void prepareSource(url).then(prepared => load(prepared.url)).catch(failed); }
+  catch (error) { failed(error); }
+}
+
+export function attachVodHls(
+  video: HTMLVideoElement,
+  url: string,
+  onUnsupported: () => void,
+  blockAds = true,
+  onAdFilter?: (result: VodAdFilterResult) => void,
+  prepareSource?: (url: string) => Promise<{ url: string; filter: VodAdFilterResult }>,
+  onPreparationError?: (error: unknown) => void,
+  networkOptions: NetworkOptions = {}
+): Hls | null {
+  const request = resetPlayback(video);
   const mse = Hls.isSupported();
   // Local HLS always stays in Crayon's MSE/MMS player. A native HLS capability
   // must never switch the phone to a different playback path or system UI.
@@ -57,7 +87,7 @@ export function attachVodHls(
   // MMS can open without an HTTP alternative when remote playback is disabled.
   // Only an explicit cast action installs a TV source and enables it again.
   video.disableRemotePlayback = true;
-  const preparedPlayback = blockAds && !!prepareSource;
+  const preparedPlayback = !!prepareSource;
   const network = new VodNetwork(video, prefetchPreference(networkOptions.prefetchLanes));
   const hls: Hls = new Hls({
     debug: false,

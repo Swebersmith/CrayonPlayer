@@ -32,7 +32,7 @@ function load() {
   document.body.dataset.entryError = 'false';
   link.hidden = true;
   status.textContent = __CRAYON_PREPARE_ENDPOINT__
-    ? 'Crayon 已载入视频，点击播放开始观看；本地和投屏均已接入去广告服务。'
+    ? 'Crayon 已载入视频，点击播放；设置中可分别切换服务器中转和去广告，两项开启时投屏也使用去广告清单。'
     : 'Crayon 已载入视频，点击播放。当前为静态模式，投屏去广告需要配套清单服务。';
 }
 document.querySelector('#source-form')!.addEventListener('submit', event => {
