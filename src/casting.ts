@@ -99,6 +99,7 @@ export function attachCasting(art: Artplayer, options: CastOptions) {
   const castEnabled = options.chromecast !== false;
   if (castEnabled) void prepareCastSdk();
   const panel = document.createElement('div');
+  panel.dataset.crayonCastPanel = '';
   panel.setAttribute('role', 'group');
   panel.setAttribute('aria-label', '投屏方式');
   panel.hidden = true;

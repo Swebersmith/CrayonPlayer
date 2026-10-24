@@ -19,7 +19,11 @@ it('preserves host playback configuration and installs gestures/casting once', (
   }, enhancements);
   const options = construct.mock.calls[0][0];
   expect(options.customType).toBe(customType);
-  expect(options.settings.slice(4)).toEqual(settings);
+  expect(options.settings.slice(-settings.length)).toEqual(settings);
+  expect(options.settings).toEqual(expect.arrayContaining([
+    expect.objectContaining({name:'crayonCompactPip'}),
+    expect.objectContaining({name:'crayonCompactFullscreenWeb'}),
+  ]));
   expect(options.settings[2]).toEqual(expect.objectContaining({ name: 'crayonPrefetch' }));
   expect(options.settings[3]).toEqual(expect.objectContaining({ name: 'crayonNetworkSpeed' }));
   expect(options.settings[0]).toEqual(expect.objectContaining({ name: 'crayonVolume' }));
@@ -37,4 +41,5 @@ it('preserves host playback configuration and installs gestures/casting once', (
   expect(pluginFactory).toHaveBeenCalledWith(enhancements);
   createCrayonPlayerCore({container:'#other',url:'https://media.example/2.mp4',fullscreen:false,fullscreenWeb:false});
   expect(construct.mock.calls[1][0]).toMatchObject({fullscreen:false,fullscreenWeb:false});
+  expect(construct.mock.calls[1][0].settings.some((item:any)=>item.name==='crayonCompactFullscreenWeb')).toBe(false);
 });
