@@ -28,9 +28,11 @@ it('preserves host playback configuration and installs gestures/casting once', (
   expect(options.fastForward).toBe(false);
   expect(options.pip).toBe(true);
   expect(options.playsInline).toBe(true);
-  expect(options.fullscreen).toBe(false);
+  expect(options.fullscreen).toBe(true);
   expect(options.fullscreenWeb).toBe(true);
   expect(options.moreVideoAttr).toMatchObject({controls:false,playsInline:true,crossOrigin:'anonymous'});
   expect(pluginFactory).toHaveBeenCalledTimes(1);
   expect(pluginFactory).toHaveBeenCalledWith(enhancements);
+  createCrayonPlayerCore({container:'#other',url:'https://media.example/2.mp4',fullscreen:false,fullscreenWeb:false});
+  expect(construct.mock.calls[1][0]).toMatchObject({fullscreen:false,fullscreenWeb:false});
 });

@@ -15,5 +15,6 @@ it('runs the direct-script browser bundle and creates the complete standalone pl
     expect(player.setting.find('crayonMiniProgress')).toBeTruthy();
     expect(player.setting.find('blockAds')).toBeTruthy();
     expect(typeof api.createMediaPreparer).toBe('function');
+    expect(typeof api.toggleCrayonFullscreen).toBe('function');
   }finally{player.destroy();container.remove();pause.mockRestore();load.mockRestore();}
 });

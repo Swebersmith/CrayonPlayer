@@ -1,7 +1,23 @@
 import { createCrayonPlayerCore } from '../src/core';
 import { touch } from './helpers';
 
-it('keeps fullscreen, controls and inline video in Crayon even when native fullscreen is available',()=>{
+it('releases the webpage fullscreen overlay when the independent player is destroyed',()=>{
+  URL.revokeObjectURL=jest.fn();URL.createObjectURL=jest.fn(()=>'blob:test');
+  const pause=jest.spyOn(HTMLMediaElement.prototype,'pause').mockImplementation(()=>undefined);
+  const load=jest.spyOn(HTMLMediaElement.prototype,'load').mockImplementation(()=>undefined);
+  const container=document.createElement('div');document.body.appendChild(container);
+  const art=createCrayonPlayerCore({container,url:'https://media.example/video.mp4'},{casting:false});
+  const root=art.template.$player;
+  try{
+    art.fullscreenWeb=true;
+    expect(root.parentElement).toBe(document.body);
+    art.destroy();
+    expect(root.isConnected).toBe(false);
+    expect(container.children).toHaveLength(0);
+  }finally{if(!art.isDestroy)art.destroy();container.remove();pause.mockRestore();load.mockRestore();}
+});
+
+it('keeps controls and inline video in Crayon when element fullscreen is unavailable',()=>{
   URL.revokeObjectURL=jest.fn();URL.createObjectURL=jest.fn(()=>'blob:test');
   const pause=jest.spyOn(HTMLMediaElement.prototype,'pause').mockImplementation(()=>undefined);
   const load=jest.spyOn(HTMLMediaElement.prototype,'load').mockImplementation(()=>undefined);
@@ -14,9 +30,9 @@ it('keeps fullscreen, controls and inline video in Crayon even when native fulls
     expect(art.video.controls).toBe(false);
     expect(art.video.hasAttribute('playsinline')).toBe(true);
     expect(art.video.hasAttribute('webkit-playsinline')).toBe(true);
-    expect(container.querySelector('.art-control-fullscreen')).toBeNull();
-    const fullscreen=container.querySelector<HTMLElement>('.art-control-fullscreenWeb')!;
+    const fullscreen=container.querySelector<HTMLElement>('.art-control-fullscreen')!;
     expect(fullscreen).not.toBeNull();
+    expect(container.querySelector('.art-control-fullscreenWeb')).not.toBeNull();
     fullscreen.click();
     expect(art.fullscreenWeb).toBe(true);
     expect(art.template.$player.parentElement).toBe(document.body);
@@ -26,6 +42,43 @@ it('keeps fullscreen, controls and inline video in Crayon even when native fulls
     expect(art.fullscreenWeb).toBe(false);
     expect(native).not.toHaveBeenCalled();
   }finally{if(art.fullscreenWeb)art.fullscreenWeb=false;art.destroy();container.remove();pause.mockRestore();load.mockRestore();}
+});
+
+it('enters and exits fullscreen on the entire player and never calls the system video fullscreen method',async()=>{
+  URL.revokeObjectURL=jest.fn();URL.createObjectURL=jest.fn(()=>'blob:test');
+  const pause=jest.spyOn(HTMLMediaElement.prototype,'pause').mockImplementation(()=>undefined);
+  const load=jest.spyOn(HTMLMediaElement.prototype,'load').mockImplementation(()=>undefined);
+  const container=document.createElement('div');document.body.appendChild(container);
+  const art=createCrayonPlayerCore({container,url:'https://media.example/video.mp4',fullscreen:true,fullscreenWeb:true},{casting:false});
+  const root=art.template.$player;
+  const savedElement=Object.getOwnPropertyDescriptor(document,'fullscreenElement');
+  const savedExit=Object.getOwnPropertyDescriptor(document,'exitFullscreen');
+  let active:Element|null=null;
+  Object.defineProperty(document,'fullscreenElement',{get:()=>active,configurable:true});
+  const enter=jest.fn(async()=>{active=root;document.dispatchEvent(new Event('fullscreenchange'));});
+  const exit=jest.fn(async()=>{active=null;document.dispatchEvent(new Event('fullscreenchange'));});
+  Object.defineProperty(root,'requestFullscreen',{value:enter,configurable:true});
+  Object.defineProperty(document,'exitFullscreen',{value:exit,configurable:true});
+  const native=jest.fn();Object.assign(art.video,{webkitSupportsFullscreen:true,webkitEnterFullscreen:native});
+  try{
+    art.emit('video:loadedmetadata',new Event('loadedmetadata'));
+    const button=root.querySelector<HTMLElement>('.art-control-fullscreen')!;
+    button.click();await Promise.resolve();
+    expect(enter).toHaveBeenCalledTimes(1);
+    expect(document.fullscreenElement).toBe(root);
+    expect(root.querySelector('.art-controls')).not.toBeNull();
+    expect(button.getAttribute('aria-label')).toBe('退出全屏');
+    expect(art.fullscreenWeb).toBe(false);
+    button.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));await Promise.resolve();
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(document.fullscreenElement).toBeNull();
+    expect(button.getAttribute('aria-label')).toBe('全屏');
+    expect(native).not.toHaveBeenCalled();
+  }finally{
+    art.destroy();container.remove();pause.mockRestore();load.mockRestore();
+    if(savedElement)Object.defineProperty(document,'fullscreenElement',savedElement);else delete (document as any).fullscreenElement;
+    if(savedExit)Object.defineProperty(document,'exitFullscreen',savedExit);else delete (document as any).exitFullscreen;
+  }
 });
 
 it('renders a manual volume submenu in real ArtPlayer and closes it with controls', async () => {
