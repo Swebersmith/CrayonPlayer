@@ -40,7 +40,8 @@ it('measures actual bytes per second, becomes idle, and resets on source changes
   expect(hud.textContent).toBe('↓ 0 B/s');
   delete art.video.vodNetwork;
   jest.advanceTimersByTime(1000);
-  expect(hud.textContent).toContain('当前播放方式不支持');
+  expect(hud.textContent).toBe('↓ —');
+  expect(hud.title).toContain('当前播放方式不支持');
   dispose();
   expect(jest.getTimerCount()).toBe(0);
   expect(hud.isConnected).toBe(false);

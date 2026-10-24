@@ -67,13 +67,16 @@ export function attachNetworkSpeed(art: Artplayer, fallback = false) {
   const hud = document.createElement('div');
   hud.dataset.crayonNetworkSpeed = '';
   hud.setAttribute('aria-label', '下载速率');
-  hud.style.cssText = 'position:relative;align-self:flex-end;max-width:100%;height:18px;flex-shrink:0;margin:0 0 2px;padding:0 2px;color:white;font:11px/18px sans-serif;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none';
+  hud.style.cssText = 'color:white;font:11px/1.5 sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none';
   const root = art.template.$player;
-  // A dedicated row below the progress bar, above the control buttons. Keeping
-  // it in the bottom panel follows its layout in mobile and both fullscreen modes.
-  const progress = art.template.$progress;
-  if (progress?.parentElement) progress.insertAdjacentElement('afterend', hud);
-  else root.appendChild(hud);
+  let control: HTMLElement = hud;
+  // The native setting control has index 30. Register in the same control row
+  // immediately before it, so fullscreen and responsive layouts keep that order.
+  art.controls.add({
+    name: 'crayonNetworkSpeed', position: 'right', index: 29, html: hud,
+    style: { minWidth: '0', maxWidth: '90px', padding: '0 6px', cursor: 'default', pointerEvents: 'none' },
+    mounted(element) { control = element; },
+  });
   let timer: ReturnType<typeof setInterval> | undefined;
   let network = art.video.vodNetwork;
   let bytes = network?.bytes || 0;
@@ -83,17 +86,23 @@ export function attachNetworkSpeed(art: Artplayer, fallback = false) {
     const now = performance.now();
     const total = current?.bytes || 0;
     const rate = current === network && now > time ? Math.max(0, total - bytes) * 1000 / (now - time) : 0;
-    hud.textContent = current ? `↓ ${formatNetworkSpeed(rate)}` : '下载速率：当前播放方式不支持';
+    hud.textContent = current ? `↓ ${formatNetworkSpeed(rate)}` : '↓ —';
+    hud.title = current ? 'HLS 分片下载速率' : '当前播放方式不支持下载速率统计';
     network = current; bytes = total; time = now;
   };
   const toggle = (enabled: boolean) => {
     clearInterval(timer); timer = undefined;
     hud.hidden = !enabled;
+    control.style.display = enabled ? '' : 'none';
     network = art.video.vodNetwork; bytes = network?.bytes || 0; time = performance.now();
     if (enabled) { update(); timer = setInterval(update, 1000); }
   };
   const change = (event: Event) => toggle((event as CustomEvent<boolean>).detail);
   root.addEventListener(SPEED_EVENT, change);
   toggle(speedPreference(fallback));
-  return () => { clearInterval(timer); root.removeEventListener(SPEED_EVENT, change); hud.remove(); };
+  return () => {
+    clearInterval(timer); root.removeEventListener(SPEED_EVENT, change);
+    if (control !== hud) art.controls.remove('crayonNetworkSpeed');
+    hud.remove();
+  };
 }

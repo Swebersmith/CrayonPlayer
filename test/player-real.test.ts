@@ -28,12 +28,16 @@ it('changes download lanes and speed display through real settings without resta
     await new Promise(resolve => setTimeout(resolve, 0));
     const hud = container.querySelector<HTMLElement>('[data-crayon-network-speed]')!;
     expect(hud.hidden).toBe(false);
-    expect(hud.previousElementSibling).toBe(art.template.$progress);
-    expect(hud.parentElement?.classList.contains('art-bottom')).toBe(true);
-    expect(hud.style.alignSelf).toBe('flex-end');
+    const speedControl = hud.parentElement!;
+    expect(speedControl.parentElement?.classList.contains('art-controls-right')).toBe(true);
+    expect(speedControl.nextElementSibling?.classList.contains('art-control-setting')).toBe(true);
+    expect(speedControl.style.display).not.toBe('none');
     expect(art.setting.find('crayonNetworkSpeed').switch).toBe(true);
     expect(localStorage.getItem('crayon-player-prefetch-lanes')).toBe('4');
     expect(localStorage.getItem('crayon-player-network-speed')).toBe('1');
+    art.setting.find('crayonNetworkSpeed').$item.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(speedControl.style.display).toBe('none');
   } finally {
     art.destroy(); container.remove();
     pause.mockRestore(); load.mockRestore(); supported.mockRestore(); source.mockRestore(); media.mockRestore();
