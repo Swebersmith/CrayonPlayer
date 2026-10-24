@@ -44,6 +44,10 @@ npm run preview
 
 此方案把页面、签名清单、分片和密钥转发部署到同一 HTTPS 站点，不需要其他视频网站、数据库或 KV/D1。配置在 `wrangler.jsonc`，默认 Worker 名称为 `crayon-player`，首次部署前可改为自己的名称。
 
+**只在 Cloudflare 控制台操作，并让 GitHub 更新自动部署**：按[控制台部署与 GitHub 自动更新教程](docs/cloudflare-github.md)操作。先创建同名 Worker、添加两项运行时 Secret，再到 Settings → Builds 连接本仓库的 `main`。构建命令填 `npm run build:hosted`，部署命令填 `npx wrangler deploy --keep-vars`；Node.js 24 已由 `.node-version` 指定。运行时密钥不能只填在构建变量里。
+
+以下为使用本地命令行部署的方式：
+
 ```sh
 npx wrangler login
 npx wrangler secret put MEDIA_SECRET
@@ -55,7 +59,7 @@ npm run deploy
 - `MEDIA_SECRET`：签名随机密钥，建议至少 32 字符。可在自己的终端运行 `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"` 生成，再在 secret 提示中输入。不能放进前端、Git 或 `vars`。
 - `VIEWER_PASSWORD`：访问页面和准备接口的口令，建议使用长的随机英文数字口令。浏览器弹出登录框时，用户名填写 **`crayon`**，密码填写该口令。
 - `secret put` 会修改远端 Worker；先确认 Cloudflare 账户和 Worker 名称。后续更新通常只需 `npm ci` 和 `npm run deploy`，不要重设密钥，否则旧投屏链接会失效。
-- `deploy:check` 只构建并打包检查，`deploy` 才发布。Workers Builds 可使用构建命令 `npm ci && npm run build:hosted`、部署命令 `npx wrangler deploy`，并配置上述两个 secret。
+- `deploy:check` 只构建并打包检查，`deploy` 才发布。Workers Builds 默认自动安装依赖，使用构建命令 `npm run build:hosted`、部署命令 `npx wrangler deploy --keep-vars`，并提前配置上述两个运行时 secret；首次配置的完整顺序见控制台教程。
 - 此模式自动启用 `prepareMedia: '/api/player/prepare'`。页面和准备接口需要登录；电视读取的媒体链接只验证签名，无需网页口令，默认有效 8 小时。请勿公开转发这些临时链接。
 - 服务会转发视频流量，平台请求量、带宽策略、CPU 和上游连通性限制仍然适用。不要把准备接口改成匿名开放代理。
 
@@ -74,10 +78,10 @@ npm run check
 npm pack
 ```
 
-得到 `swebersmith-crayon-player-0.2.0.tgz`，在自己的前端项目安装该文件：
+得到 `swebersmith-crayon-player-0.3.2.tgz`，在自己的前端项目安装该文件：
 
 ```sh
-npm install /path/to/swebersmith-crayon-player-0.2.0.tgz
+npm install /path/to/swebersmith-crayon-player-0.3.2.tgz
 ```
 
 拥有仓库访问权限时，也可 `npm install github:Swebersmith/CrayonPlayer`，安装会自动构建。不要求该名称已发布到 npm 公共仓库，不能直接假定 `npm install @swebersmith/crayon-player` 可用。
