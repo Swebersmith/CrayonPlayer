@@ -1,5 +1,6 @@
 import { createCrayonPlayer } from './src/index';
 import { mediaAddress, playbackEntry, playbackLink } from './demo-entry';
+import { setupIntegrationGuide } from './demo-integration';
 
 declare const __CRAYON_PREPARE_ENDPOINT__: string;
 
@@ -11,6 +12,7 @@ document.body.dataset.embedded = String(entry.embedded);
 const signOut = document.querySelector<HTMLFormElement>('#sign-out');
 if (signOut) signOut.hidden = !__CRAYON_PREPARE_ENDPOINT__ || entry.embedded;
 input.value = entry.url;
+setupIntegrationGuide(window.location.href, !!__CRAYON_PREPARE_ENDPOINT__, () => input.value);
 let player: ReturnType<typeof createCrayonPlayer> | undefined;
 function showError(message: string) {
   document.body.dataset.entryError = 'true';
