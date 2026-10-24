@@ -1,11 +1,13 @@
 import Artplayer from 'artplayer';
 import Hls from 'hls.js';
+import type { SettingOption } from 'artplayer/types/setting';
 
 import { createCrayonPlayerCore } from './core';
 import { createMediaPreparer, mediaPreparationNotice,MediaPreparer } from './media-client';
 import { EnhancementOptions } from './plugin';
-import { attachVodHls, attachVodRecovery, vodFilteredTime, vodSourceDuration, vodSourceTime } from './vod-playback';
+import { attachVodFile, attachVodHls, attachVodRecovery, vodFilteredTime, vodSourceDuration, vodSourceTime } from './vod-playback';
 import { sourceToFilteredTime } from './vod-segment-filter';
+import { PLAYBACK_POLICY_CHANGE, saveServerRelayPreference, serverRelayPreference } from './relay-settings';
 
 export type { CastOptions, CastSource, PreparedCastSource } from './casting';
 export { attachCasting, prepareCastSdk } from './casting';
@@ -34,6 +36,8 @@ export interface CrayonPlayerOptions {
   poster?: string;
   autoplay?: boolean;
   blockAds?: boolean;
+  /** Initial server relay preference when prepareMedia is configured. Default: true. */
+  serverRelay?: boolean;
   /** Scope this key to a film/episode, not to the whole site. */
   storageKey?: string;
   skip?: { enabled?: boolean; intro?: number; outro?: number };
@@ -54,8 +58,10 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): Artplayer {
   let destroyed = false;
   let blocked = options.blockAds !== false;
   const prepareMedia = typeof options.prepareMedia === 'string' ? createMediaPreparer(options.prepareMedia) : options.prepareMedia;
+  let relay = !!prepareMedia && serverRelayPreference(options.serverRelay);
   const playerOptions = { ...options.artplayer, ...options.player };
   let resume: number | undefined;
+  let resumePlaying = false;
   let lastSave = 0;
   let advanced = false;
   let wake: { release(): Promise<void> } | undefined;
@@ -69,6 +75,13 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): Artplayer {
     }
   } catch { /* Storage is optional in private browsing. */ }
   const sourceUrl = () => art?.option.url || options.url;
+  const hlsSource = () => art.option.type === 'm3u8' || /\.m3u8(?:[?#]|$)/i.test(sourceUrl());
+  const preparationFailed = (error: unknown) => {
+    art.loading.show = false;
+    art.notice.show = mediaPreparationNotice(error);
+  };
+  const preparePlayback = () => relay && prepareMedia ? (url: string) => prepareMedia(url, blocked) : undefined;
+  const fileType = (video: HTMLVideoElement, url: string) => attachVodFile(video, url, preparePlayback(), preparationFailed);
   const hlsType = (video: HTMLVideoElement, url: string) => {
     // Local playback always uses Crayon's MSE/MMS engine and inline controls.
     const hls = attachVodHls(video, url, () => {
@@ -81,18 +94,23 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): Artplayer {
     }, blocked,
       result => {
         const seconds = result.removed.reduce((sum, range) => sum + range.end - range.start, 0);
-        art.setting.update({ name: 'blockAds', html: '去广告', switch: blocked, tooltip: seconds ? `已过滤 ${seconds.toFixed(1)} 秒` : result.reason === 'unsupported' ? '已开启 · 当前格式暂不支持过滤' : '已开启 · 未识别出可过滤广告' });
+        art.setting.update({ name: 'blockAds', html: '去广告', switch: blocked, tooltip: !blocked ? '' : seconds ? `已过滤 ${seconds.toFixed(1)} 秒` : result.reason === 'unsupported' ? '已开启 · 当前格式暂不支持过滤' : '已开启 · 未识别出可过滤广告' });
       },
-      prepareMedia ? url => prepareMedia(url,blocked) : undefined,
-      (error) => {
-        art.loading.show = false;
-        art.notice.show = mediaPreparationNotice(error);
-      }, options.enhancements?.network);
+      preparePlayback(), preparationFailed, options.enhancements?.network);
     if (hls) attachVodRecovery(hls, () => {
       if (destroyed) return;
       art.loading.show = false;
       art.notice.show = '视频加载失败，请重试或更换片源';
     });
+  };
+  const restartPlayback = () => {
+    resume = resume ?? vodSourceTime(art.video);
+    resumePlaying = resumePlaying || art.playing;
+    // Invalidate a TV URL prepared under either previous switch state, including
+    // a picker that is still pending. Local playback keeps the original time.
+    art.template.$player.dispatchEvent(new Event(PLAYBACK_POLICY_CHANGE));
+    if (hlsSource()) hlsType(art.video, sourceUrl());
+    else fileType(art.video, sourceUrl());
   };
   const next = () => {
     if (advanced) return;
@@ -107,19 +125,27 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): Artplayer {
     autoOrientation: true, theme: '#22c55e', lang: 'zh-cn',
     ...playerOptions,
     container: options.container, url: options.url, id: playerOptions.id || 'crayon-player',
-    customType: { m3u8: hlsType, ...playerOptions.customType },
+    customType: { m3u8: hlsType, mp4: fileType, ...playerOptions.customType },
     settings: [
       { name: 'blockAds', html: '去广告', switch: blocked, onSwitch(item) {
-        if (!Hls.isSupported()) {
+        if (hlsSource() && !Hls.isSupported()) {
           art.notice.show = '此浏览器不支持 Crayon 网页播放';
           return item.switch;
         }
-        resume = vodSourceTime(art.video);
         blocked = !item.switch;
         item.tooltip = '';
-        hlsType(art.video, sourceUrl());
+        restartPlayback();
         return blocked;
       } },
+      ...(prepareMedia ? [{ name: 'serverRelay', html: '服务器中转', switch: relay,
+        tooltip: '关闭后浏览器直连；去广告单独控制',
+        onSwitch(item: SettingOption) {
+          relay = !item.switch;
+          saveServerRelayPreference(relay);
+          restartPlayback();
+          return relay;
+        },
+      }] : []),
       { name: 'crayonSkip', html: '跳过片头片尾', switch: skip.enabled, onSwitch: item => (skip.enabled = !item.switch) },
       { html: '设置片头', onClick() { skip.intro = vodSourceTime(art.video); return `${Math.floor(skip.intro)} 秒`; } },
       { html: '设置片尾', onClick() { skip.outro = Math.max(0, vodSourceDuration(art.video) - vodSourceTime(art.video)); return `${Math.floor(skip.outro)} 秒`; } },
@@ -138,7 +164,11 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): Artplayer {
     ...options.enhancements,
     casting: options.enhancements?.casting === false ? false : {
       getSource: () => ({ url: sourceUrl(), title: art.title, currentTime: vodSourceTime(art.video) }),
+      getHint: () => relay
+        ? blocked ? '服务器中转已开启；电视使用服务端去广告清单，识别结果取决于片源。' : '服务器中转已开启；去广告已关闭，电视播放完整清单。'
+        : blocked ? '服务器中转已关闭；本机去广告仅在当前设备生效，电视直连原始片源。' : '服务器中转已关闭；电视需能直接访问原始片源。',
       ...(prepareMedia ? { prepareSource: async (source: { url: string; title?: string }) => {
+        if (!relay) return { ...source, mapTime: (time: number) => time };
         const prepared = await prepareMedia(source.url,blocked);
         return { ...source,...prepared, mapTime: (time: number) => sourceToFilteredTime(prepared.filter.removed,time) };
       } } : {}),
@@ -175,6 +205,10 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): Artplayer {
     if (resume !== undefined) {
       art.currentTime = Math.min(vodFilteredTime(art.video, resume), Math.max(0, art.duration - 1));
       resume = undefined;
+    }
+    if (resumePlaying) {
+      resumePlaying = false;
+      void Promise.resolve(art.play()).catch(() => { /* A browser may require a new tap. */ });
     }
   });
   art.on('video:timeupdate', () => {

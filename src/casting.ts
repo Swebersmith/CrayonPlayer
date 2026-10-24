@@ -2,6 +2,7 @@ import type Artplayer from 'artplayer';
 
 import { setHlsAlternative } from './vod-playback';
 import type { VodAdFilterResult } from './vod-segment-filter';
+import { PLAYBACK_POLICY_CHANGE } from './relay-settings';
 
 export interface CastSource { url: string; title?: string; type?: string; currentTime?: number }
 export interface PreparedCastSource extends CastSource {
@@ -14,6 +15,8 @@ export interface CastOptions {
   getSource: () => CastSource;
   /** Prepare a TV-accessible filtered playlist before the user opens the device picker. */
   prepareSource?: (source: CastSource) => Promise<PreparedCastSource>;
+  /** Describe the current relay/filter policy when the casting panel opens. */
+  getHint?: () => string;
   chromecast?: boolean;
 }
 
@@ -83,9 +86,10 @@ export function attachCasting(art: Artplayer, options: CastOptions) {
     const original = options.getSource();
     if (prepared?.original === original.url) return;
     const stamp = generation;
-    preparing = options.prepareSource(original).then(value => {
+    const pending = options.prepareSource(original).then(value => {
       if (!disposed && stamp === generation && options.getSource().url === original.url) prepared = { original: original.url, value };
-    }).catch(() => { /* The picker reports a preparation failure only on demand. */ }).finally(() => { preparing = undefined; });
+    }).catch(() => { /* The picker reports a preparation failure only on demand. */ }).finally(() => { if (preparing === pending) preparing = undefined; });
+    preparing = pending;
   };
   const readySource = () => {
     const original = options.getSource();
@@ -216,6 +220,7 @@ export function attachCasting(art: Artplayer, options: CastOptions) {
   trigger.innerHTML = '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M2 12a10 10 0 0 1 10 10M2 17a5 5 0 0 1 5 5"/><circle cx="2" cy="22" r="1"/></svg>';
   function close() { panel.hidden = true; trigger.setAttribute('aria-expanded', 'false'); }
   trigger.onclick = () => {
+    if (options.getHint) hint.textContent = options.getHint();
     warm();
     panel.hidden = !panel.hidden;
     trigger.setAttribute('aria-expanded', String(!panel.hidden));
@@ -224,11 +229,12 @@ export function attachCasting(art: Artplayer, options: CastOptions) {
   art.controls.add({ name: 'crayonCast', position: 'right', index: 18, html: trigger, tooltip: '投屏' });
   const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !panel.hidden) { close(); trigger.focus(); } };
   const outside = (event: Event) => { if (!panel.contains(event.target as Node) && !trigger.contains(event.target as Node)) close(); };
-  const sourceChanged = () => { generation++; prepared = undefined; close(); };
+  const sourceChanged = () => { generation++; prepared = undefined; preparing = undefined; close(); };
   const control = (visible: boolean) => { if (!visible) close(); };
   document.addEventListener('keydown', escape);
   document.addEventListener('click', outside);
   video.addEventListener('loadstart', sourceChanged);
+  art.template.$player.addEventListener(PLAYBACK_POLICY_CHANGE, sourceChanged);
   art.on('control', control);
   art.on('video:canplay', warm);
   return () => {
@@ -239,6 +245,7 @@ export function attachCasting(art: Artplayer, options: CastOptions) {
     document.removeEventListener('keydown', escape);
     document.removeEventListener('click', outside);
     video.removeEventListener('loadstart', sourceChanged);
+    art.template.$player.removeEventListener(PLAYBACK_POLICY_CHANGE, sourceChanged);
     art.off('control', control);
     art.off('video:canplay', warm);
     panel.remove();
