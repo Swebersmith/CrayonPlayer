@@ -119,12 +119,19 @@ it('uses a password-only form, preserves deep links and protects cookies and log
     expect(html).not.toContain('viewer-password');
     expect(html).toContain(target.replace(/&/g, '&amp;'));
     expect(gate.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(gate.headers.get('Referrer-Policy')).toBe('same-origin');
+    expect(html).toContain('<meta name="referrer" content="same-origin">');
+    // Both native login and logout forms must retain Origin in the browser.
+    expect(readFileSync(join(__dirname, '../index.html'), 'utf8')).toContain('<meta name="referrer" content="same-origin"');
     const bad = await login(runtime, 'wrong', target);
     expect(bad.status).toBe(401);
     expect(bad.headers.get('Set-Cookie')).toBeNull();
     expect(bad.headers.get('WWW-Authenticate')).toBeNull();
+    expect(bad.headers.get('Referrer-Policy')).toBe('same-origin');
     expect(await bad.text()).toContain('密码不正确');
     expect((await login(runtime, 'viewer-password', target, 'https://evil.example')).status).toBe(403);
+    expect((await login(runtime, 'viewer-password', target, 'null')).status).toBe(403);
+    expect((await runtime.dispatchFetch('https://player.example/auth/login', { method: 'POST' })).status).toBe(403);
     const success = await login(runtime, 'viewer-password', target);
     expect(success.status).toBe(303);
     expect(success.headers.get('Location')).toBe(target);

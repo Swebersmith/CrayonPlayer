@@ -6,7 +6,8 @@ const encoder = new TextEncoder();
 const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const privateHeaders = () => new Headers({
   'Cache-Control': 'private, no-store',
-  'Referrer-Policy': 'no-referrer',
+  // Native POST forms need same-origin referrers to preserve their Origin header.
+  'Referrer-Policy': 'same-origin',
   'X-Content-Type-Options': 'nosniff',
 });
 
@@ -56,7 +57,7 @@ export function viewerLoginPage(request, message = '', status = 200, destination
   headers.set('Content-Type', 'text/html; charset=UTF-8');
   headers.set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'");
   const html = `<!doctype html>
-<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>输入访问密码 · Crayon Player</title>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="same-origin"><title>输入访问密码 · Crayon Player</title>
 <style>*{box-sizing:border-box}body{margin:0;min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:24px;background:#101714;color:#edf4ed;font:15px/1.6 system-ui,sans-serif}main{width:min(100%,380px);padding:32px;border:1px solid #334238;border-radius:18px;background:#18231c}.brand{font-size:12px;letter-spacing:.16em;color:#a3b7a8}h1{font-size:25px;margin:18px 0 8px}p{color:#a3b7a8;margin:0 0 24px}label{display:block;margin:0 0 8px}input,button{width:100%;font:inherit;border-radius:9px;padding:12px}input{border:1px solid #45664d;background:#101714;color:white}input:focus{outline:2px solid #9ed9ae;outline-offset:2px}button{margin-top:18px;border:0;background:#b2e0bc;color:#152c1a;font-weight:650;cursor:pointer}.error{color:#ffb4a8;margin:12px 0 0;font-size:13px}</style></head>
 <body><main><div class="brand">CRAYON / PLAYER</div><h1>输入访问密码</h1><p>验证后即可进入播放器。</p>
 <form action="/auth/login" method="post"><input type="hidden" name="returnTo" value="${escapeHtml(next)}"><label for="password">访问密码</label><input id="password" name="password" type="password" autocomplete="current-password" required autofocus placeholder="请输入访问密码">
