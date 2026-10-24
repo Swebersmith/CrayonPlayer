@@ -44,7 +44,7 @@ export function createMediaPreparer(endpoint = '/api/player/prepare'): MediaPrep
         throw new MediaPreparationError('无法连接去广告服务，请检查网络后重试','SERVICE_UNREACHABLE');
       } finally { clearTimeout(timer); }
       if (!response.ok) {
-        if (response.status === 401 || response.status === 403) throw new MediaPreparationError('登录已失效或无权准备清单，请重新登录','UNAUTHORIZED');
+        if (response.status === 401 || response.status === 403) throw new MediaPreparationError('登录已失效或无权准备清单，请刷新页面输入访问密码后重试','UNAUTHORIZED');
         if (response.status === 503) throw new MediaPreparationError('去广告服务未就绪，请检查服务配置或稍后重试','SERVICE_UNAVAILABLE');
         let code: string | undefined;
         let upstreamStatus: number | undefined;

@@ -13,7 +13,8 @@
   </head>
   <body>
     <main>
-      <div class="brand">CRAYON / PLAYER</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:16px"><div class="brand">CRAYON / PLAYER</div>
+      <form id="sign-out" action="/auth/logout" method="post" hidden><button type="submit" style="border:1px solid #45664d;background:transparent;color:#b2e0bc;border-radius:9px;padding:5px 12px;cursor:pointer">退出登录</button></form></div>
       <div class="heading"><span class="badge">独立 · 可嵌入 · 触屏友好</span></div>
       <div class="player-frame"><div id="player"></div></div>
       <form id="source-form" class="toolbar"><label class="sr-only" for="source">视频地址</label><input id="source" type="url" required placeholder="粘贴 M3U8 或 MP4 视频地址" autocomplete="off" /><button class="load" type="submit">载入视频 ↗</button><button id="share-source" type="button">生成播放链接</button></form>
