@@ -62,7 +62,7 @@ npm run deploy
 - `deploy:check` 只构建并打包检查，`deploy` 才发布。Workers Builds 默认自动安装依赖，使用构建命令 `npm run build:hosted`、部署命令 `npx wrangler deploy --keep-vars`，并提前配置上述两个运行时 secret；首次配置的完整顺序见控制台教程。
 - 此模式自动启用 `prepareMedia: '/api/player/prepare'`。页面和准备接口需要登录；电视读取的媒体链接只验证签名，无需网页口令，默认有效 8 小时。请勿公开转发这些临时链接。
 - 登录状态保存在签名的 HttpOnly / Secure Cookie 中，有效 12 小时，过期后重新输入密码。首页提供「退出登录」。沿用已有 `VIEWER_PASSWORD` 和 `MEDIA_SECRET`，无需新增配置；更换访问密码会使已有浏览器登录失效。登录后回到原播放链接，密码不进入 URL 或前端存储。
-- 服务默认转发视频流量；厂长使用的 `https://vip.dytt-tvs.com` 已验证允许跨域的 TS 分片由浏览器直连，避免该 CDN 的地区限制拒绝中转网络。清单仍经过鉴权和广告过滤，密钥与其他来源仍使用签名中转。平台请求量、带宽策略、CPU 和上游连通性限制仍然适用。不要把准备接口改成匿名开放代理。
+- 服务会转发视频流量，平台请求量、带宽策略、CPU 和上游连通性限制仍然适用。不要把准备接口改成匿名开放代理。
 
 本地验证完整部署：在仓库根目录创建未提交的 `.dev.vars`，写入 `MEDIA_SECRET=自己的测试密钥` 和 `VIEWER_PASSWORD=自己的测试口令`，运行 `npm run dev:hosted`。改动 Worker 配置后运行 `npm run worker:types`。本地口令、生成类型和 `.wrangler/` 不进入版本库或 npm 包。
 
