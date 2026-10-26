@@ -15,6 +15,30 @@ it('shares one authenticated preparation between playback and casting and separa
   await prepare('https://media.example/1.m3u8',false);
   expect(global.fetch).toHaveBeenCalledTimes(2);
 });
+
+it('separates playlist-only preparation from full relay cache and sends its mode to the service', async () => {
+  const prepare = createMediaPreparer();
+  const full = prepare('https://media.example/1.m3u8', true);
+  await full;
+  jest.mocked(global.fetch).mockResolvedValueOnce({ok:true,json:async()=>({...result,relayMode:'playlist'})} as Response);
+  const direct = prepare('https://media.example/1.m3u8', true, 'playlist');
+  expect(direct).not.toBe(full);
+  expect(prepare('https://media.example/1.m3u8', true, 'playlist')).toBe(direct);
+  await expect(direct).resolves.toMatchObject({relayMode:'playlist'});
+  expect(global.fetch).toHaveBeenLastCalledWith('/api/player/prepare', expect.objectContaining({
+    body:JSON.stringify({url:'https://media.example/1.m3u8',blockAds:true,relayMode:'playlist'}),
+  }));
+  expect(prepare('https://media.example/1.m3u8', true, 'full')).toBe(full);
+  expect(global.fetch).toHaveBeenCalledTimes(2);
+});
+
+it('rejects an older service that silently ignores playlist-only mode and permits an updated retry', async () => {
+  const prepare = createMediaPreparer();
+  await expect(prepare('https://media.example/1.m3u8', true, 'playlist')).rejects.toMatchObject({code:'MODE_UNSUPPORTED'});
+  jest.mocked(global.fetch).mockResolvedValueOnce({ok:true,json:async()=>({...result,relayMode:'playlist'})} as Response);
+  await expect(prepare('https://media.example/1.m3u8', true, 'playlist')).resolves.toMatchObject({relayMode:'playlist'});
+  expect(global.fetch).toHaveBeenCalledTimes(2);
+});
 it('evicts failures and expiring links so a fresh login or preparation can retry',async()=>{
   const prepare = createMediaPreparer();
   jest.mocked(global.fetch).mockResolvedValueOnce({ok:false} as Response);

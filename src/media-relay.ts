@@ -5,7 +5,8 @@ export interface MediaRelayOptions {
   secret: string;
   authorize: (request: Request) => boolean | Promise<boolean>;
 }
-interface Grant { u: string; e: number; b: boolean; m: 'p' | 'r' }
+// p is a signed playlist-only policy; absent on existing/full-relay grants.
+interface Grant { u: string; e: number; b: boolean; m: 'p' | 'r'; p?: boolean }
 const encoder = new TextEncoder();
 const lifetime = 8 * 60 * 60;
 const headers = () => new Headers({
@@ -61,7 +62,8 @@ async function verify(token: string, key: CryptoKey): Promise<Grant> {
   const grant = JSON.parse(decode(payload));
   const now = Math.floor(Date.now()/1000);
   if (!Number.isInteger(grant.e) || grant.e <= now || grant.e > now + lifetime + 60 || typeof grant.u !== 'string' ||
-    typeof grant.b !== 'boolean' || !['p','r'].includes(grant.m)) throw new Error('Expired media token');
+    typeof grant.b !== 'boolean' || !['p','r'].includes(grant.m) ||
+    (grant.p !== undefined && typeof grant.p !== 'boolean') || (grant.p && grant.m !== 'p')) throw new Error('Expired media token');
   publicUrl(grant.u);
   return grant;
 }
@@ -106,6 +108,9 @@ async function rewrite(content: string, base: string, origin: string, grant: Gra
   const proxy = (value: string, mode: Grant['m'], keyUri = false) => {
     if (keyUri && /^(?:data|skd|urn):/i.test(value)) return Promise.resolve(value);
     const url = publicUrl(value,base).href;
+    // Child playlists keep filtering/signature policy. Binary media and keys
+    // use absolute source URLs so receiving devices fetch them directly.
+    if (grant.p && mode === 'r') return Promise.resolve(url);
     const id = mode + url;
     const existing = cached.get(id);
     if (existing) return existing;
@@ -148,6 +153,8 @@ export async function handleMediaRelay(request: Request, options: MediaRelayOpti
     try {
       const body = await readMediaText(new Response(request.body),12000,10000);
       const input = JSON.parse(body);
+      if (input.relayMode !== undefined && input.relayMode !== 'full' && input.relayMode !== 'playlist') throw new RelayError('INVALID_REQUEST');
+      const playlistOnly = input.relayMode === 'playlist';
       let url = publicUrl(input.url).href;
       const isHls = /\.m3u8(?:[?#]|$)/i.test(url) || /mpegurl/i.test(input.type || '');
       let block = input.blockAds !== false;
@@ -172,9 +179,12 @@ export async function handleMediaRelay(request: Request, options: MediaRelayOpti
       }
       const expiry = Math.floor(Date.now()/1000)+lifetime;
       const result = {
-        url: await mediaUrl(incoming.origin,{u:url,e:expiry,b:block,m:isHls?'p':'r'},key),
+        url: playlistOnly && !isHls ? url : await mediaUrl(incoming.origin,{
+          u:url,e:expiry,b:block,m:isHls?'p':'r',...(playlistOnly ? {p:true} : {}),
+        },key),
         type: isHls ? 'application/x-mpegURL' : input.type || 'video/mp4',
         filter: {...filter,playlist:''}, expiresAt: expiry * 1000,
+        relayMode: playlistOnly ? 'playlist' : 'full',
       };
       h.set('Content-Type','application/json');
       return new Response(JSON.stringify(result),{headers:h});

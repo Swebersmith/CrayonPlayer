@@ -51,6 +51,70 @@ it('issues cookie-free filtered playlists, signs every retained segment/key, and
   expect(content).toMatch(/URI="https:\/\/tv.example\/api\/player\/media\?token=/);
   expect(content).toContain('IV=0x');
 });
+
+it('serves a signed ad-free playlist with direct absolute media/key URLs in playlist-only mode', async () => {
+  const ready = await (await prepare({url:rootUrl,relayMode:'playlist'}))!.json();
+  expect(ready.relayMode).toBe('playlist');
+  expect(grantOf(ready.url)).toMatchObject({p:true,m:'p'});
+  const response = (await get(ready.url))!;
+  const content = await response.text();
+  const segments = content.split('\n').filter(line=>line.startsWith('https://'));
+  expect(segments).toHaveLength(48);
+  expect(segments[0]).toBe('https://media.example/video/before-0.ts');
+  expect(content).toContain('URI="https://media.example/show/keys/key.bin"');
+  expect(content).toContain('IV=0x');
+  expect(content).not.toContain('/api/player/media');
+  expect(content).not.toContain('insert-');
+  expect(Number(response.headers.get('X-Crayon-Ad-Seconds'))).toBeCloseTo(12.5);
+  expect((global.fetch as jest.Mock).mock.calls.map(([url])=>url)).toEqual([rootUrl,rootUrl]);
+  const changed = new URL(ready.url);
+  const [payload, signature] = changed.searchParams.get('token')!.split('.');
+  const grant = JSON.parse(Buffer.from(payload,'base64url').toString('utf8'));
+  delete grant.p;
+  changed.searchParams.set('token',Buffer.from(JSON.stringify(grant)).toString('base64url')+'.'+signature);
+  expect((await get(changed.href))!.status).toBe(401);
+});
+
+it('keeps nested video/audio playlists signed and the same direct-resource policy in playlist-only mode', async () => {
+  const master = '#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",URI="tracks/audio"\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=1000,URI="tracks/iframes"\n#EXT-X-STREAM-INF:BANDWIDTH=10000,AUDIO="audio"\ntracks/video\n';
+  const media = '#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-MAP:URI="../init.mp4",BYTERANGE="100@0"\n#EXT-X-KEY:METHOD=AES-128,URI="../key.bin",IV=0x00000000000000000000000000000001\n#EXTINF:6,\n#EXT-X-BYTERANGE:200@100\n../all.m4s\n#EXT-X-ENDLIST\n';
+  (global.fetch as jest.Mock).mockImplementation(async (url:string)=>new Response(url===rootUrl?master:media));
+  const ready = await (await prepare({url:rootUrl,relayMode:'playlist'}))!.json();
+  const content = await (await get(ready.url))!.text();
+  const nested = [...content.matchAll(/URI="([^"]+)"/g)].map(match=>match[1]);
+  nested.push(content.split('\n').find(line=>line.startsWith('https://'))!);
+  expect(nested).toHaveLength(3);
+  for (const url of nested) {
+    expect(new URL(url).origin).toBe('https://tv.example');
+    expect(grantOf(url)).toMatchObject({p:true,m:'p',b:false});
+    const child = await (await get(url))!.text();
+    expect(child).toContain('URI="https://media.example/show/init.mp4"');
+    expect(child).toContain('URI="https://media.example/show/key.bin"');
+    expect(child).toContain('https://media.example/show/all.m4s');
+    expect(child).toContain('#EXT-X-BYTERANGE:200@100');
+    expect(child).not.toContain('/api/player/media');
+  }
+});
+
+it('keeps the ad switch independent and returns MP4 directly without transferring it in playlist-only mode', async () => {
+  const ready = await (await prepare({url:rootUrl,relayMode:'playlist',blockAds:false}))!.json();
+  expect(await (await get(ready.url))!.text()).toContain('insert-');
+  (global.fetch as jest.Mock).mockClear();
+  const mp4 = await (await prepare({url:'https://media.example/movie.mp4?token=x',relayMode:'playlist'}))!.json();
+  expect(mp4.url).toBe('https://media.example/movie.mp4?token=x');
+  expect(mp4.relayMode).toBe('playlist');
+  expect(global.fetch).not.toHaveBeenCalled();
+});
+
+it('validates relay mode and prevents unsafe resource URLs even when resources are direct', async () => {
+  expect(await (await prepare({url:rootUrl,relayMode:'unknown'}))!.json()).toEqual({error:{code:'INVALID_REQUEST'}});
+  expect(global.fetch).not.toHaveBeenCalled();
+  for (const resource of ['http://127.0.0.1/private.ts','file:///private.ts']) {
+    playlist = `#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\n${resource}\n#EXT-X-ENDLIST\n`;
+    const ready = await (await prepare({url:rootUrl,relayMode:'playlist',blockAds:false}))!.json();
+    expect((await get(ready.url))!.status).toBe(502);
+  }
+});
 it('streams signed media/Range without forwarding website cookies or other client credentials', async () => {
   const ready = await (await prepare())!.json();
   const text = await (await get(ready.url))!.text();

@@ -1,6 +1,6 @@
 import Hls from 'hls.js';
 
-import { createCrayonPlayer } from '../src/index';
+import { createCrayonPlayer, MediaRelayMode } from '../src/index';
 
 let player: ReturnType<typeof createCrayonPlayer> | undefined;
 let container: HTMLDivElement;
@@ -119,7 +119,10 @@ it('uses the MP4 relay independently of ads and switches MP4 to direct without c
   expect(player.video.src).toBe(url);expect(player.video.hls).toBeUndefined();
 });
 
-it.each([[true,true],[true,false],[false,true],[false,false]])('sends the matching TV source and timeline for relay=%s, blockAds=%s',async(relay,blockAds)=>{
+it.each([
+  [true,true,'full'],[true,false,'full'],[false,true,'full'],[false,false,'full'],
+  [true,true,'playlist'],[true,false,'playlist'],
+] as const)('sends the matching TV source and timeline for relay=%s, blockAds=%s, mode=%s',async(relay,blockAds,relayMode)=>{
   jest.spyOn(Hls,'isSupported').mockReturnValue(true);
   jest.spyOn(Hls.prototype,'loadSource').mockImplementation(()=>undefined);
   jest.spyOn(Hls.prototype,'attachMedia').mockImplementation(()=>undefined);
@@ -132,8 +135,9 @@ it.each([[true,true],[true,false],[false,true],[false,false]])('sends the matchi
   try{
     const url='https://media.example/cast.m3u8';
     const filter={playlist:'',originalDuration:100,removed:[{start:10,end:20}],reason:'filtered' as const};
-    const prepare=jest.fn(async(_url:string,ads:boolean)=>({url:'https://tv.example/api/player/media?token='+(ads?'filtered':'raw'),filter:ads?filter:{...filter,removed:[]}}));
-    player=createCrayonPlayer({container,url,serverRelay:relay,blockAds,prepareMedia:prepare});
+    const preparedUrl = 'https://tv.example/api/player/media?token='+(blockAds?'filtered':'raw')+(relayMode==='playlist'?'-playlist':'');
+    const prepare=jest.fn(async(_url:string,ads:boolean,mode?:MediaRelayMode)=>({url:'https://tv.example/api/player/media?token='+(ads?'filtered':'raw')+(mode==='playlist'?'-playlist':''),filter:ads?filter:{...filter,removed:[]},relayMode:mode??'full'}));
+    player=createCrayonPlayer({container,url,serverRelay:relay,relayMode,blockAds,prepareMedia:prepare});
     await new Promise(resolve=>setTimeout(resolve,0));
     Object.defineProperty(player.video,'duration',{value:100,configurable:true});
     if(blockAds)player.video.vodAdFilter=filter;
@@ -146,9 +150,81 @@ it.each([[true,true],[true,false],[false,true],[false,false]])('sends the matchi
     await new Promise(resolve=>setTimeout(resolve,0));
     expect(load).toHaveBeenLastCalledWith(expect.objectContaining({
       currentTime:relay&&blockAds?62:72,
-      media:expect.objectContaining({contentId:relay?'https://tv.example/api/player/media?token='+(blockAds?'filtered':'raw'):url}),
+      media:expect.objectContaining({contentId:relay?preparedUrl:url}),
     }));
     if(!relay){expect(prepare).not.toHaveBeenCalled();}
+    else if(relayMode==='playlist')expect(prepare).toHaveBeenCalledWith(url,blockAds,'playlist');
     else expect(prepare).toHaveBeenCalledWith(url,blockAds);
   }finally{delete (window as any).cast;delete (window as any).chrome;}
+});
+
+it('changes relay mode through real settings, restores source time, and remembers it for the next episode', async () => {
+  jest.spyOn(Hls,'isSupported').mockReturnValue(true);
+  jest.spyOn(Hls.prototype,'loadSource').mockImplementation(()=>undefined);
+  jest.spyOn(Hls.prototype,'attachMedia').mockImplementation(()=>undefined);
+  const filter = {playlist:'',originalDuration:100,removed:[{start:10,end:20}],reason:'filtered' as const};
+  const prepare = jest.fn(async(_url:string,_ads:boolean,mode?:MediaRelayMode)=>({
+    url:'https://tv.example/api/player/media?token='+(mode==='playlist'?'playlist':'full'),filter,relayMode:mode??'full',
+  }));
+  const wait = () => new Promise(resolve=>setTimeout(resolve,0));
+  const url = 'https://media.example/episode.m3u8';
+  player=createCrayonPlayer({container,url,prepareMedia:prepare});
+  await wait();
+  Object.defineProperty(player.video,'duration',{value:90,configurable:true}); player.currentTime=27;
+  const previous = player.video.hls!;
+  const destroy = jest.spyOn(previous,'destroy');
+  player.setting.show = true;
+  player.setting.find('relayMode').$item.click(); await wait();
+  player.setting.find('relayMode').selector!.find(item=>item.value==='playlist')!.$item.click();
+  await wait();
+  expect(destroy).toHaveBeenCalledTimes(1);
+  expect(prepare).toHaveBeenLastCalledWith(url,true,'playlist');
+  expect(Hls.prototype.loadSource).toHaveBeenLastCalledWith('https://tv.example/api/player/media?token=playlist');
+  Object.defineProperty(player.video,'duration',{value:90,configurable:true});
+  player.emit('video:canplay',new Event('canplay'));
+  expect(player.currentTime).toBe(27);
+  expect(player.setting.find('serverRelay').switch).toBe(true);
+  expect(player.setting.find('blockAds').switch).toBe(true);
+  expect(localStorage.getItem('crayon-player-relay-mode')).toBe('playlist');
+  container.querySelector<HTMLButtonElement>('button[aria-label="投屏"]')!.click(); await wait();
+  expect(container.querySelector('[aria-label="投屏方式"]')!.textContent).toContain('视频分片和密钥由电视直连片源');
+  player.destroy(); player=undefined;
+  player=createCrayonPlayer({container,url:'https://media.example/next.m3u8',prepareMedia:prepare,enhancements:{casting:false}});
+  await wait();
+  expect(prepare).toHaveBeenLastCalledWith('https://media.example/next.m3u8',true,'playlist');
+  expect(player.setting.find('relayMode').selector!.find(item=>item.value==='playlist')!.default).toBe(true);
+});
+
+it('stores mode selection while relay is off, applies it on enable, and keeps it on preparation failure', async () => {
+  jest.spyOn(Hls,'isSupported').mockReturnValue(true);
+  jest.spyOn(Hls.prototype,'loadSource').mockImplementation(()=>undefined);
+  jest.spyOn(Hls.prototype,'attachMedia').mockImplementation(()=>undefined);
+  localStorage.setItem('crayon-player-relay-mode','invalid-old-value');
+  const prepare = jest.fn(async()=>{ throw new Error('unavailable'); });
+  const url = 'https://media.example/episode.m3u8';
+  player=createCrayonPlayer({container,url,serverRelay:false,prepareMedia:prepare,enhancements:{casting:false}});
+  await new Promise(resolve=>setTimeout(resolve,0));
+  expect(player.setting.find('relayMode').selector!.find(item=>item.value==='full')!.default).toBe(true);
+  player.setting.find('relayMode').onSelect!.call(player,{value:'playlist'} as any,container,new Event('click'));
+  expect(prepare).not.toHaveBeenCalled();
+  expect(Hls.prototype.loadSource).toHaveBeenCalledTimes(1);
+  const toggle=player.setting.find('serverRelay');
+  toggle.switch=toggle.onSwitch!.call(player,toggle,container,new Event('click'));
+  await new Promise(resolve=>setTimeout(resolve,0));
+  expect(prepare).toHaveBeenCalledTimes(1);
+  expect(prepare).toHaveBeenCalledWith(url,true,'playlist');
+  expect(player.setting.find('serverRelay').switch).toBe(true);
+  expect(player.video.hasAttribute('src')).toBe(false);
+});
+
+it('rejects a custom preparer that ignores playlist-only mode instead of loading full-relay media', async () => {
+  jest.spyOn(Hls,'isSupported').mockReturnValue(true);
+  jest.spyOn(Hls.prototype,'loadSource').mockImplementation(()=>undefined);
+  jest.spyOn(Hls.prototype,'attachMedia').mockImplementation(()=>undefined);
+  const prepare = jest.fn(async()=>({url:'https://tv.example/full-relay',filter:{playlist:'',originalDuration:0,removed:[],reason:'unsupported' as const}}));
+  player=createCrayonPlayer({container,url:'https://media.example/episode.m3u8',relayMode:'playlist',prepareMedia:prepare,enhancements:{casting:false}});
+  await new Promise(resolve=>setTimeout(resolve,0));
+  expect(Hls.prototype.loadSource).not.toHaveBeenCalled();
+  expect(player.template.$noticeInner.innerText).toContain('不支持仅清单模式');
+  expect(prepare).toHaveBeenCalledTimes(1);
 });

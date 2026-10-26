@@ -1,12 +1,15 @@
 import type { VodAdFilterResult } from './vod-segment-filter';
 
+export type MediaRelayMode = 'full' | 'playlist';
+
 export interface PreparedMedia {
   url: string;
   type?: string;
   filter: VodAdFilterResult;
   expiresAt?: number;
+  relayMode?: MediaRelayMode;
 }
-export type MediaPreparer = (url: string, blockAds: boolean) => Promise<PreparedMedia>;
+export type MediaPreparer = (url: string, blockAds: boolean, relayMode?: MediaRelayMode) => Promise<PreparedMedia>;
 export interface MediaPreparerAuth {
   /** A short-lived session token, never the viewer's password. */
   accessToken: () => string | undefined;
@@ -28,8 +31,8 @@ export function mediaPreparationNotice(error: unknown): string {
 /** One bounded cache is shared by local playback and casting for this adapter. */
 export function createMediaPreparer(endpoint = '/api/player/prepare', auth?: MediaPreparerAuth): MediaPreparer {
   const cache = new Map<string, { created: number; expiresAt: number; promise: Promise<PreparedMedia> }>();
-  return (url, blockAds) => {
-    const key = JSON.stringify([url, blockAds]);
+  return (url, blockAds, relayMode = 'full') => {
+    const key = JSON.stringify([url, blockAds, relayMode]);
     const now = Date.now();
     const existing = cache.get(key);
     if (existing && now - existing.created < 30 * 60 * 1000 && existing.expiresAt > now + 60000) return existing.promise;
@@ -42,7 +45,8 @@ export function createMediaPreparer(endpoint = '/api/player/prepare', auth?: Med
         const token = auth?.accessToken();
         response = await fetch(endpoint, {
           method: 'POST', credentials: 'same-origin', cache: 'no-store',
-          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: JSON.stringify({ url, blockAds }),
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+          body: JSON.stringify({ url, blockAds, ...(relayMode === 'playlist' ? { relayMode } : {}) }),
           signal: controller.signal,
         });
       } catch {
@@ -75,6 +79,9 @@ export function createMediaPreparer(endpoint = '/api/player/prepare', auth?: Med
       let result: PreparedMedia;
       try { result = await response.json() as PreparedMedia; }
       catch { throw new MediaPreparationError('播放服务返回了无效清单','INVALID_RESPONSE'); }
+      if (relayMode === 'playlist' && result?.relayMode !== 'playlist') {
+        throw new MediaPreparationError('中转服务不支持仅清单模式，请更新服务后重试','MODE_UNSUPPORTED');
+      }
       if (!result || typeof result.url !== 'string' || !result.url.trim() || !result.filter ||
         !Number.isFinite(result.filter.originalDuration) || result.filter.originalDuration < 0 ||
         !['filtered', 'no-match', 'unsupported'].includes(result.filter.reason) || !Array.isArray(result.filter.removed) ||

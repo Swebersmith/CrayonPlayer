@@ -2,6 +2,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { runInThisContext } from 'vm';
+import { adFixture } from './__fixtures__/vod-playlist';
 
 Object.assign(global,runInThisContext('({ReadableStream,WritableStream,TransformStream,TextEncoder,TextDecoder,Request,Response,Headers,Blob,File,MessageEvent,structuredClone,MessageChannel,MessagePort,DOMException,AbortSignal,AbortController,Event,EventTarget})'));
 const { Miniflare, convertV4MiniflareOptions } = require(require.resolve('miniflare',{paths:[require.resolve('wrangler/package.json')]}));
@@ -96,6 +97,46 @@ it('runs non-Baofeng nested playlists and distinguishes blocked upstreams in wor
     expect(segments).toHaveLength(media.split('\n').filter(line=>line.startsWith('https://')).length);
     expect(await (await prepare('https://media.example/blocked/index.m3u8')).json()).toEqual({error:{code:'UPSTREAM_UNAVAILABLE',upstreamStatus:403}});
   }finally{await runtime.dispose();}
+});
+
+it('serves a cookie-free filtered casting playlist while leaving media and AES keys direct in workerd', async () => {
+  const code = esbuild.buildSync({entryPoints:['examples/cloudflare/worker.mjs'],bundle:true,write:false,format:'esm',platform:'browser'}).outputFiles[0].text;
+  const fixture = adFixture({key:'#EXT-X-KEY:METHOD=AES-128,URI="keys/program.key"'});
+  const upstreamUrls: string[] = [];
+  const runtime = new Miniflare(convertV4MiniflareOptions({cf:false,workers:[{
+    name:'crayon-playlist-only',compatibilityDate:'2026-10-23',modules:true,script:code,
+    bindings:{MEDIA_SECRET:'development-media-secret-for-tests',VIEWER_PASSWORD:'viewer-password'},
+    serviceBindings:{ASSETS:()=>new NativeResponse('Crayon Player')},
+    outboundService:(request:Request)=>{
+      upstreamUrls.push(request.url);
+      return new NativeResponse(fixture,{headers:{'Content-Type':'application/vnd.apple.mpegurl'}});
+    },
+  }]}));
+  try {
+    const auth = await loginCookie(runtime);
+    const root = 'https://media.example/show/index.m3u8';
+    const response = await runtime.dispatchFetch('https://player.example/api/player/prepare',{
+      method:'POST',headers:{Cookie:auth,'Content-Type':'application/json'},
+      body:JSON.stringify({url:root,blockAds:true,relayMode:'playlist'}),
+    });
+    expect(response.status).toBe(200);
+    const ready = await response.json();
+    expect(ready.relayMode).toBe('playlist');
+    expect(ready.filter.reason).toBe('filtered');
+    const media = await runtime.dispatchFetch(ready.url);
+    expect(media.status).toBe(200);
+    expect(media.headers.get('Access-Control-Allow-Origin')).toBe('*');
+    const playlist = await media.text();
+    expect(playlist).not.toContain('/api/player/media');
+    expect(playlist).not.toContain('insert-');
+    expect(playlist).toContain('URI="https://media.example/show/keys/program.key"');
+    expect(playlist).toContain('IV=0x');
+    expect(playlist.split('\n').filter((line:string)=>line.startsWith('https://'))).toHaveLength(48);
+    expect(upstreamUrls).toEqual([root,root]);
+    const head = await runtime.dispatchFetch(ready.url,{method:'HEAD'});
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe('');
+  } finally { await runtime.dispose(); }
 });
 
 function authRuntime(password = 'viewer-password', clockOffset = 0) {

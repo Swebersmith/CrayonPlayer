@@ -3,11 +3,11 @@ import Hls from 'hls.js';
 import type { SettingOption } from 'artplayer/types/setting';
 
 import { createCrayonPlayerCore } from './core';
-import { createMediaPreparer, mediaPreparationNotice,MediaPreparer } from './media-client';
+import { createMediaPreparer, MediaPreparationError, mediaPreparationNotice, MediaPreparer, MediaRelayMode } from './media-client';
 import { EnhancementOptions } from './plugin';
 import { attachVodFile, attachVodHls, attachVodRecovery, vodFilteredTime, vodSourceDuration, vodSourceTime } from './vod-playback';
 import { sourceToFilteredTime } from './vod-segment-filter';
-import { PLAYBACK_POLICY_CHANGE, saveServerRelayPreference, serverRelayPreference } from './relay-settings';
+import { PLAYBACK_POLICY_CHANGE, relayModePreference, saveRelayModePreference, saveServerRelayPreference, serverRelayPreference } from './relay-settings';
 
 export type { CastOptions, CastSource, PreparedCastSource } from './casting';
 export { attachCasting, prepareCastSdk } from './casting';
@@ -17,7 +17,7 @@ export { createCrayonPlayerCore } from './core';
 export { toggleCrayonFullscreen } from './fullscreen';
 export type { GestureOptions } from './gestures';
 export { attachGestures } from './gestures';
-export type { MediaPreparer, PreparedMedia, MediaPreparerAuth } from './media-client';
+export type { MediaPreparer, PreparedMedia, MediaPreparerAuth, MediaRelayMode } from './media-client';
 export { createMediaPreparer, MediaPreparationError, mediaPreparationNotice } from './media-client';
 export type { EnhancementOptions } from './plugin';
 export { crayonPlayerPlugin } from './plugin';
@@ -38,6 +38,8 @@ export interface CrayonPlayerOptions {
   blockAds?: boolean;
   /** Initial server relay preference when prepareMedia is configured. Default: true. */
   serverRelay?: boolean;
+  /** Relay all resources (default), or only playlists with direct media downloads. */
+  relayMode?: MediaRelayMode;
   /** Scope this key to a film/episode, not to the whole site. */
   storageKey?: string;
   skip?: { enabled?: boolean; intro?: number; outro?: number };
@@ -59,6 +61,8 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): Artplayer {
   let blocked = options.blockAds !== false;
   const prepareMedia = typeof options.prepareMedia === 'string' ? createMediaPreparer(options.prepareMedia) : options.prepareMedia;
   let relay = !!prepareMedia && serverRelayPreference(options.serverRelay);
+  let relayMode = relayModePreference(options.relayMode);
+  const relayModeLabel = (mode: MediaRelayMode) => mode === 'playlist' ? '仅清单（分片直连）' : '全部资源';
   const playerOptions = { ...options.artplayer, ...options.player };
   let resume: number | undefined;
   let resumePlaying = false;
@@ -80,7 +84,15 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): Artplayer {
     art.loading.show = false;
     art.notice.show = mediaPreparationNotice(error);
   };
-  const preparePlayback = () => relay && prepareMedia ? (url: string) => prepareMedia(url, blocked) : undefined;
+  const prepare = async (url: string) => {
+    const mode = relayMode;
+    const result = await (mode === 'playlist' ? prepareMedia!(url, blocked, mode) : prepareMedia!(url, blocked));
+    if (mode === 'playlist' && result.relayMode !== 'playlist') {
+      throw new MediaPreparationError('中转服务不支持仅清单模式，请更新服务后重试','MODE_UNSUPPORTED');
+    }
+    return result;
+  };
+  const preparePlayback = () => relay && prepareMedia ? prepare : undefined;
   const fileType = (video: HTMLVideoElement, url: string) => attachVodFile(video, url, preparePlayback(), preparationFailed);
   const hlsType = (video: HTMLVideoElement, url: string) => {
     // Local playback always uses Crayon's MSE/MMS engine and inline controls.
@@ -145,6 +157,20 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): Artplayer {
           restartPlayback();
           return relay;
         },
+      }, {
+        name: 'relayMode', html: '中转方式', tooltip: relayModeLabel(relayMode),
+        selector: (['full', 'playlist'] as const).map(mode => ({
+          html: relayModeLabel(mode), value: mode, default: mode === relayMode,
+        })),
+        onSelect(item: SettingOption) {
+          const selected = item.value as MediaRelayMode;
+          if (selected === relayMode) return relayModeLabel(relayMode);
+          relayMode = selected;
+          saveRelayModePreference(relayMode);
+          if (relay) restartPlayback();
+          else art.notice.show = '已保存中转方式，开启服务器中转后生效';
+          return relayModeLabel(relayMode);
+        },
       }] : []),
       { name: 'crayonSkip', html: '跳过片头片尾', switch: skip.enabled, onSwitch: item => (skip.enabled = !item.switch) },
       { html: '设置片头', onClick() { skip.intro = vodSourceTime(art.video); return `${Math.floor(skip.intro)} 秒`; } },
@@ -164,12 +190,17 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): Artplayer {
     ...options.enhancements,
     casting: options.enhancements?.casting === false ? false : {
       getSource: () => ({ url: sourceUrl(), title: art.title, currentTime: vodSourceTime(art.video) }),
-      getHint: () => relay
-        ? blocked ? '服务器中转已开启；电视使用服务端去广告清单，识别结果取决于片源。' : '服务器中转已开启；去广告已关闭，电视播放完整清单。'
-        : blocked ? '服务器中转已关闭；本机去广告仅在当前设备生效，电视直连原始片源。' : '服务器中转已关闭；电视需能直接访问原始片源。',
+      getHint: () => {
+        if (!relay) return blocked ? '服务器中转已关闭；本机去广告仅在当前设备生效，电视直连原始片源。' : '服务器中转已关闭；电视需能直接访问原始片源。';
+        if (relayMode === 'playlist') {
+          if (!hlsSource()) return '仅清单中转；当前文件由电视直连片源，不进行清单去广告。';
+          return `仅清单中转；${blocked ? '电视使用服务端去广告清单' : '去广告已关闭'}，视频分片和密钥由电视直连片源，片源须允许跨域访问。`;
+        }
+        return blocked ? '服务器中转已开启；电视使用服务端去广告清单，识别结果取决于片源。' : '服务器中转已开启；去广告已关闭，电视播放完整清单。';
+      },
       ...(prepareMedia ? { prepareSource: async (source: { url: string; title?: string }) => {
         if (!relay) return { ...source, mapTime: (time: number) => time };
-        const prepared = await prepareMedia(source.url,blocked);
+        const prepared = await prepare(source.url);
         return { ...source,...prepared, mapTime: (time: number) => sourceToFilteredTime(prepared.filter.removed,time) };
       } } : {}),
       ...options.enhancements?.casting,
