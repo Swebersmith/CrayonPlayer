@@ -20,9 +20,7 @@
       <nav class="page-actions" aria-label="页面操作"><button id="show-integration" type="button" aria-haspopup="dialog">接入说明</button><form id="sign-out" action="/auth/logout" method="post" hidden><button type="submit">退出登录</button></form></nav></div>
       <div class="heading"><span class="badge">独立 · 可嵌入 · 触屏友好</span></div>
       <div class="player-frame"><div id="player"></div></div>
-      <form id="source-form" class="toolbar"><label class="sr-only" for="source">视频地址</label><input id="source" type="url" required placeholder="粘贴 M3U8 或 MP4 视频地址" autocomplete="off" /><button class="load" type="submit">载入视频 ↗</button><button id="share-source" type="button">生成播放链接</button></form>
-      <div id="status" role="status">默认载入公开测试视频。也可以粘贴你自己的片源。</div>
-      <input id="playback-link" type="text" readonly hidden aria-label="播放链接" />
+      <div id="status" role="status">在播放器画面内搜索影片或输入播放页地址。</div>
       <div class="details">
         <section><h2>手指，就是遥控器。</h2><div class="gestures"><div class="tip"><b>左侧 / 右侧双击</b><small>快退 / 快进 10 秒</small></div><div class="tip"><b>长按画面</b><small>2 倍速，松手恢复</small></div><div class="tip"><b>中间双击</b><small>暂停 / 继续播放</small></div><div class="tip"><b>右侧上下滑动</b><small>调节播放音量</small></div></div></section>
         <section><h2>小屏开始，大屏继续。</h2><p>点击控制栏的投屏图标，选择 AirPlay、系统投屏或 Chromecast。设备应在同一网络，电视需要能直接访问视频地址。</p><p>支持画中画、倍速、全屏、断点续播和片头片尾设置。画面左右滑与底部进度条拖动会同步更新进度；设置可开启底边迷你进度条。全屏和网页全屏均保留 Crayon 控件与手势。</p><p>设置内可点开音量滑块；部分 iPhone 浏览器需用实体音量键。完整部署模式会为本地播放和投屏提供去广告清单，操作方法与设备限制见仓库 README。</p></section>
@@ -31,12 +29,12 @@
     </main>
     <dialog id="integration-guide" aria-labelledby="integration-title">
       <div class="guide-heading"><h2 id="integration-title">网页与 App 接入</h2><form method="dialog"><button class="guide-close" aria-label="关闭接入说明">关闭</button></form></div>
-      <p>将 MP4 或 M3U8 视频地址传给播放器即可。下面的示例会根据当前网站地址自动生成。</p>
-      <label for="integration-source">用于生成示例的视频地址</label><input id="integration-source" type="url" placeholder="https://media.example/video.m3u8" autocomplete="off" />
+      <p>直链使用 Crayon 播放；视频网站播放页可在「播放线路」中选择第三方解析。下面的示例会保留当前所选线路。</p>
+      <label for="integration-source">用于生成示例的视频地址（M1907 也支持名称）</label><input id="integration-source" type="text" placeholder="具体播放页网址，或 M1907 影片名称" autocomplete="off" />
       <div id="integration-feedback" role="status" aria-live="polite"></div>
       <section class="guide-section"><h3>1. 其他 App 调用</h3><p>如果 App 支持「自定义播放器」或「解析接口」，将下面的接口前缀填入配置。App 应在前缀后拼接经过 URL 编码的视频地址。</p>
         <label for="integration-prefix">接口前缀</label><div class="guide-example"><textarea id="integration-prefix" rows="2" readonly spellcheck="false"></textarea><button class="guide-copy" type="button" data-copy="integration-prefix">复制前缀</button></div>
-        <p class="guide-note">拼接方式：<code>接口前缀 + encodeURIComponent(视频地址)</code>。如果 App 已自动编码，请勿重复编码。这里接收媒体直链，不解析视频网站的播放网页。</p>
+        <p class="guide-note">拼接方式：<code>接口前缀 + encodeURIComponent(视频地址)</code>。如果 App 已自动编码，请勿重复编码。第三方线路接收播放页地址，是否支持该平台取决于上游服务及域名授权。</p>
         <label for="integration-link">完整播放链接（可直接打开）</label><div class="guide-example"><textarea id="integration-link" rows="3" readonly spellcheck="false"></textarea><button class="guide-copy" type="button" data-copy="integration-link">复制链接</button></div>
         <p class="guide-note">App 也可以用系统浏览器打开完整链接。使用内置 WebView 时需启用 JavaScript、DOM 存储和 Cookie，按平台配置行内播放与全屏；播放可能需要用户点击。</p>
       </section>

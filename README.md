@@ -2,7 +2,7 @@
 
 可独立部署，也可嵌入网页的 HTML5 视频播放器。支持 MP4 / HLS、投屏、触屏手势、拖动进度、断点续播、片头片尾和广告分片过滤。
 
-Crayon Player 是独立播放器。影片目录、账户、选集和选择其他播放器属于宿主网站。独立运行不需要任何指定视频网站的代码、账户、数据库或接口。`prepareMedia` 是可选的通用接入配置，未配置时可使用静态演示与本地分片过滤；需要投屏过滤时可部署本仓库自带的服务。
+Crayon Player 是独立播放器。影片目录、账户和选集属于宿主网站。独立运行不需要任何指定视频网站的代码、账户、数据库或接口。演示页面另外提供可选的第三方解析线路。`prepareMedia` 是可选的通用接入配置，未配置时可使用静态演示与本地分片过滤；需要投屏过滤时可部署本仓库自带的服务。
 
 ## 选择使用方式
 
@@ -88,13 +88,47 @@ playerUrl.searchParams.set('url', 'https://media.example/video.m3u8?token=abc&ep
 
 `/parse` 默认只显示播放器；添加 `&embed=0` 可显示完整页面。首页也支持 `/?url=编码后的视频地址`。纯静态部署使用首页查询参数，首页生成链接时会保留所在子目录。
 
-此入口接收媒体地址，不解析任意视频网站网页。首次访问只需在网页输入 `VIEWER_PASSWORD`，不能将密码或 `MEDIA_SECRET` 拼进 URL。登录会保留原播放链接的地址参数。
+此入口默认接收媒体地址；视频网站播放页可选择下述第三方线路。首次访问只需在网页输入 `VIEWER_PASSWORD`，不能将密码或 `MEDIA_SECRET` 拼进 URL。登录会保留原播放链接的地址参数。
+
+### 播放器内搜索、选集与解析
+
+搜索、分集、线路和重试都位于 ArtPlayer 自身的播放节点内，元素全屏、网页全屏以及只显示播放器的嵌入模式均可使用。点击画面右上角的「搜索」，输入片名检索腾讯视频、爱奇艺、优酷、芒果 TV、哔哩哔哩；选择影片、平台、分集后，将真实官方播放页传给解析器。也可直接粘贴具体播放页网址。搜索结果不保证上游一定支持播放。
+
+- 主搜索来源为 360 影视的公开搜索与详情数据，能获取平台播放页和分集；自动模式在无结果或来源失败时尝试搜狗视频公开网页结果。可筛选平台或手动切换「影视目录 / 网页补充」。仅接受这五个平台的内容页，不把广告跳转、首页或搜索页当成播放地址。网页补充结果可能是单条视频。
+- 前四条解析线路接收 HTTP(S) 播放页地址。第五条 M1907 接收名称或播放页，实际参数为 `https://im1907.top/?jx=`。只有 M1907 接受纯片名。
+- QL 在完整部署中通过登录保护的 `POST /api/player/resolve` 获取媒体地址，交给 Crayon 播放。适配器从页面配置读取临时 token，调用固定上游的解析请求，不执行其前端授权脚本，也不转发用户登录 Cookie 或凭证。
+- TX、SD、AIBox、M1907 的上游网页作为图层嵌入播放器自身节点，切换和搜索入口保留在画面内；这些线路使用上游控件，Crayon 的媒体过滤与投屏功能只作用于自身实际播放的媒体。
+- 2026-10-28 验证：真实爱奇艺、优酷、哔哩哔哩、腾讯、芒果播放页均通过 QL 返回 M3U8；爱奇艺完成搜索、平台选择、选集、解析和实际播放的浏览器测试，并验证了全屏内搜索。接口成功与实播分别验证，不保证所有节目、平台和网络均可用。M1907 与 AIBox 的结果仍取决于上游网页和节点状态。
+
+完整部署示例：`/parse?parser=ql&url=编码后的播放页地址`；按名称调用第五条：`/parse?parser=m1907&url=编码后的片名`。支持线路 ID：`native`、`tx`、`sd`、`ql`、`aibox`、`m1907`。配置位于 `src/library-sources.ts`。播放器内部的「播放链接」和网页接入说明均保留所选线路。
+
+SDK 接入同样可以启用播放器内搜索，不依赖本项目演示网页的 DOM：
+
+```ts
+const player = createCrayonPlayer({
+  container: '#player',
+  url: '', // 可先搜索，再选择播放；也可填媒体直链。
+  prepareMedia: '/api/player/prepare',
+  library: {
+    searchEndpoint: '/api/player/search',
+    detailEndpoint: '/api/player/detail',
+    resolveEndpoint: '/api/player/resolve',
+  },
+});
+player.library?.open();
+await player.library?.play('https://www.iqiyi.com/v_19rrjaail0.html', 'ql');
+await player.library?.play('西游记', 'm1907');
+```
+
+随库导出 `VideoLibraryOptions`、`VideoLibraryController`，服务端入口导出 `handleVideoCatalog`、`searchVideoCatalog`、`videoCatalogDetail`。完整部署自动启用搜索；搜索、分集和解析接口复用原有登录，无需新增密钥或数据库。纯静态部署保留播放器内输入和线路选择，搜索与服务端解析需配套服务；静态 QL 网页仍可能提示域名未授权。
+
+复测：`node scripts/probe-search.mjs 片名` 验证目录来源；`node scripts/probe-parsers.mjs 网址` 验证嵌入；`node scripts/probe-ql.mjs 具体播放页网址` 验证解析。先 `npm run build:hosted`，再 `node scripts/verify-parser-playback.mjs --search` 实测内部搜索、选集、播放和全屏。浏览器脚本需已安装 `playwright-core` 和 Chrome，使用本地临时测试账号；结果保存在忽略的 `.parser-inspection/`。更新线上部署需同时构建页面和发布 Worker，沿用两项原有 secrets。
 
 **跨站 iframe 密码登录**：`/parse?url=...` 或 `embed=1` 可在播放器内直接输入密码。登录优先保存在 `Secure; HttpOnly; SameSite=None; Partitioned` Cookie 中，有效 12 小时；同一宿主网站下换集、刷新和重新创建 iframe 可复用登录。普通首页仍使用原有的 `SameSite=Lax` 登录 Cookie，两个入口的登录互相隔离。
 
 旧版 WebView 等环境不接受 Cookie 时，播放器只将限时嵌入凭证保存在自己源下的 `sessionStorage`，在同一标签页内刷新、换集或重新创建 iframe 时复用。原始密码只经 HTTPS 发送给播放器的认证接口，不写入 localStorage/sessionStorage、URL、日志或跨窗口消息；外层网站无法通过跨源 DOM 读取密码或凭证。不要把播放器部署在不受信任网页的同一源下。若浏览器同时禁止 Cookie 和站点存储，则只能保持当前页面内存中的登录，刷新或重建 iframe 仍需重新输入。
 
-嵌入凭证仅用于嵌入登录检查和媒体准备，不能当作首页登录 Cookie 使用；过期或更换 `VIEWER_PASSWORD` 后失效。设置 → 退出登录清除当前嵌入环境的登录状态。宿主无需增加服务端；若设置 iframe sandbox，需要允许 `allow-scripts allow-same-origin`，并保持播放器与宿主跨源。`allow` 需包含所需的 fullscreen / autoplay / picture-in-picture 权限。
+嵌入凭证用于嵌入登录检查、媒体准备、搜索、分集和解析，不能当作首页登录 Cookie 使用；过期或更换 `VIEWER_PASSWORD` 后失效。设置 → 退出登录清除当前嵌入环境的登录状态。宿主无需增加服务端；若设置 iframe sandbox，需要允许 `allow-scripts allow-same-origin`，并保持播放器与宿主跨源。`allow` 需包含所需的 fullscreen / autoplay / picture-in-picture 权限。
 
 嵌入界面及其编译后的 JS/CSS 为公开启动文件，不包含密钥；媒体准备接口仍要求有效登录，认证成功前不会加载视频。无需修改现有两个 Worker secrets。
 

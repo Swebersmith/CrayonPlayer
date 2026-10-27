@@ -2,19 +2,20 @@ import { playbackLink } from './demo-entry';
 
 const escapeAttribute = (value: string) => value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]!));
 
-export function integrationExamples(href: string, source: string, hosted: boolean) {
+export function integrationExamples(href: string, source: string, hosted: boolean, parser = '') {
   const base = new URL(hosted ? '/parse' : './', href);
-  const link = playbackLink(href, source, hosted);
+  if (parser) base.searchParams.set('parser', parser);
+  const link = playbackLink(href, source, hosted, parser);
   const embedded = new URL(link);
   embedded.searchParams.set('embed', '1');
   return {
-    prefix: base.href + '?url=',
+    prefix: base.href + (base.search ? '&url=' : '?url='),
     link,
     iframe: `<iframe\n  src="${escapeAttribute(embedded.href)}"\n  style="width:100%;aspect-ratio:16/9;border:0"\n  title="Crayon Player" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen>\n</iframe>`,
   };
 }
 
-export function setupIntegrationGuide(href: string, hosted: boolean, source: () => string) {
+export function setupIntegrationGuide(href: string, hosted: boolean, source: () => string, parser: () => string = () => '') {
   const dialog = document.querySelector<HTMLDialogElement>('#integration-guide')!;
   const input = document.querySelector<HTMLInputElement>('#integration-source')!;
   const feedback = document.querySelector<HTMLDivElement>('#integration-feedback')!;
@@ -24,7 +25,7 @@ export function setupIntegrationGuide(href: string, hosted: boolean, source: () 
 
   const update = () => {
     try {
-      const examples = integrationExamples(href, input.value, hosted);
+      const examples = integrationExamples(href, input.value, hosted, parser());
       fields.forEach(name => { output(name).value = examples[name]; });
       feedback.textContent = '';
       dialog.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach(button => { button.disabled = false; });

@@ -28,3 +28,9 @@ it.each(['javascript:alert(1)','file:///movie.mp4','https://name:password@media.
 it('shows a missing-address error for the parse entry',()=>{
   expect(playbackEntry('https://player.example/parse/')).toMatchObject({url:'',embedded:true,error:expect.stringContaining('缺少视频地址')});
 });
+
+it('round-trips film names only with the M1907 route',()=>{
+  const link=playbackLink('https://player.example/','西游记',true,'m1907');
+  expect(playbackEntry(link)).toMatchObject({url:'西游记',error:''});
+  expect(()=>playbackLink('https://player.example/','西游记',true,'ql')).toThrow();
+});

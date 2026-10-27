@@ -221,6 +221,93 @@ const embedLogin = (runtime:any, password = 'viewer-password', origin = 'https:/
   method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ password }).toString(),
 });
 
+it('serves authenticated five-platform search and episodes through fixed metadata providers',async()=>{
+  const code=esbuild.buildSync({entryPoints:['examples/cloudflare/worker.mjs'],bundle:true,write:false,format:'esm',platform:'browser'}).outputFiles[0].text;
+  const upstream:Request[]=[];
+  const links={qq:'https://v.qq.com/x/cover/show/episode.html',qiyi:'https://www.iqiyi.com/v_19rrjaail0.html',youku:'https://v.youku.com/v_show/id_XMTEyMTU5MDI4.html',imgo:[{url:'https://www.mgtv.com/b/327378/5423583.html'}],bilibili1:'https://www.bilibili.com/bangumi/play/ep327134'};
+  const runtime=new Miniflare(convertV4MiniflareOptions({cf:false,workers:[{
+    name:'crayon-catalog',compatibilityDate:'2026-10-23',modules:true,script:code,
+    bindings:{MEDIA_SECRET:'development-media-secret-for-tests',VIEWER_PASSWORD:'viewer-password'},
+    serviceBindings:{ASSETS:()=>new NativeResponse('Crayon Player')},
+    outboundService:(request:Request)=>{
+      upstream.push(request);
+      return new NativeResponse(JSON.stringify(new URL(request.url).hostname==='api.so.360kan.com'
+        ?{code:0,data:{longData:{rows:[{cat_id:'2',en_id:'show',titleTxt:'西游记',year:'1986',playlinks:links}]}}}
+        :{errno:0,data:{title:'西游记',playlinks:links,allepidetail:{qiyi:[{url:links.qiyi,playlink_num:'25'}]}}}));
+    },
+  }]}));
+  try{
+    const get=(path:string,headers:Record<string,string>={})=>runtime.dispatchFetch('https://player.example/api/player/'+path,{headers});
+    expect((await get('search?q=test')).status).toBe(401);expect(upstream).toHaveLength(0);
+    const cookie=await loginCookie(runtime);const auth={Cookie:cookie};
+    for(const path of ['search?q=','search?q=test&platform=evil','search?q=test&source=https://evil.example','detail?id=https://evil.example'])expect((await get(path,auth)).status).toBe(400);
+    expect(upstream).toHaveLength(0);
+    const response=await get('search?q='+encodeURIComponent('西游记'),auth);
+    expect(response.status).toBe(200);expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    const results=await response.json();expect(results.items[0].platforms.sort()).toEqual(['bilibili','iqiyi','mgtv','qq','youku']);
+    const filtered=await (await get('search?q=test&platform=mgtv',auth)).json();expect(filtered.items[0].platforms).toEqual(['mgtv']);
+    const detail=await (await get('detail?id=360:2:show&platform=iqiyi',auth)).json();
+    expect(detail.episodes).toEqual([{platform:'iqiyi',url:links.qiyi,title:'第 25 集'}]);
+    const {token}=await (await embedLogin(runtime)).json();expect((await get('search?q=test',{Authorization:'Bearer '+token})).status).toBe(200);
+    expect((await get('search?q=test',{...auth,Origin:'https://evil.example'})).status).toBe(403);
+    for(const request of upstream){
+      expect(['api.so.360kan.com','api.web.360kan.com']).toContain(new URL(request.url).hostname);
+      expect(request.headers.get('Cookie')).toBeNull();expect(request.headers.get('Authorization')).toBeNull();
+    }
+  }finally{await runtime.dispose();}
+});
+
+it('resolves QL through fixed upstreams with viewer authentication, bounded input and no credential forwarding',async()=>{
+  const code=esbuild.buildSync({entryPoints:['examples/cloudflare/worker.mjs'],bundle:true,write:false,format:'esm',platform:'browser'}).outputFiles[0].text;
+  const upstream:Request[]=[];
+  let mode='ok';
+  const runtime=new Miniflare(convertV4MiniflareOptions({cf:false,workers:[{
+    name:'crayon-resolver',compatibilityDate:'2026-10-23',modules:true,script:code,
+    bindings:{MEDIA_SECRET:'development-media-secret-for-tests',VIEWER_PASSWORD:'viewer-password'},
+    serviceBindings:{ASSETS:()=>new NativeResponse('Crayon Player')},
+    outboundService:(request:Request)=>{
+      upstream.push(request);
+      if(new URL(request.url).pathname==='/') return new NativeResponse(mode==='changed'?'no configuration':'<script>const playerConfig={apiToken:"temporary-page-token"};</script>');
+      const body=mode==='failed'?{code:404,msg:'private provider details'}:mode==='unsafe'?{code:200,url:'javascript:alert(1)'}:{code:200,url:'https://media.example/movie.m3u8?token=a+b&part=2',type:'m3u8'};
+      return new NativeResponse(JSON.stringify(body));
+    },
+  }]}));
+  const source='https://v.qq.com/x/cover/episode.html?token=a+b&part=2';
+  const resolve=(headers:Record<string,string>={},body:unknown={parser:'ql',url:source})=>runtime.dispatchFetch('https://player.example/api/player/resolve',{
+    method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify(body),
+  });
+  try{
+    expect((await resolve()).status).toBe(401);
+    expect(upstream).toHaveLength(0);
+    const cookie=await loginCookie(runtime);
+    const auth={Cookie:cookie};
+    expect((await resolve({...auth,Origin:'https://evil.example'})).status).toBe(403);
+    expect((await resolve(auth,{parser:'other',url:source})).status).toBe(400);
+    expect((await resolve(auth,{parser:'ql',url:'http://127.0.0.1/'})).status).toBe(400);
+    expect((await resolve(auth,{parser:'ql',url:source,extra:'x'.repeat(20000)})).status).toBe(400);
+    expect(upstream).toHaveLength(0);
+    const response=await resolve(auth);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(await response.json()).toEqual({url:'https://media.example/movie.m3u8?token=a+b&part=2',type:'m3u8'});
+    expect(new URL(upstream[0].url).searchParams.get('url')).toBe(source);
+    expect(new URL(upstream[1].url).searchParams.get('token')).toBe('temporary-page-token');
+    for(const request of upstream){
+      expect(new URL(request.url).hostname).toBe('svip.qlplayer.cyou');
+      expect(request.headers.get('Cookie')).toBeNull();
+      expect(request.headers.get('Authorization')).toBeNull();
+    }
+    const {token}=await (await embedLogin(runtime)).json();
+    expect((await resolve({Authorization:'Bearer '+token})).status).toBe(200);
+    for(const [testMode,error] of [['failed','RESOLVE_FAILED'],['changed','PROVIDER_CHANGED'],['unsafe','INVALID_RESPONSE']]){
+      mode=testMode;
+      const rejected=await resolve(auth);
+      expect(rejected.status).toBe(502);
+      expect(await rejected.json()).toEqual({error:{code:error}});
+    }
+  }finally{await runtime.dispose();}
+});
+
 it('issues private partitioned embed sessions, preserves a strict origin check and never grants homepage access', async () => {
   const runtime = authRuntime();
   try {

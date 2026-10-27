@@ -8,8 +8,7 @@ beforeEach(()=>{
   jest.resetModules();
   const html=readFileSync(join(__dirname,'../index.html'),'utf8');
   document.body.innerHTML=html.split('<body>')[1].split('</body>')[0];
-  document.body.removeAttribute('data-embedded');
-  document.body.removeAttribute('data-entry-error');
+  document.body.removeAttribute('data-embedded'); document.body.removeAttribute('data-entry-error');
   listeners=[];
   const add=window.addEventListener.bind(window);
   jest.spyOn(window,'addEventListener').mockImplementation((type,listener,options)=>{
@@ -25,44 +24,45 @@ beforeEach(()=>{
 afterEach(()=>{
   window.dispatchEvent(new Event('pagehide'));
   listeners.forEach(({type,listener})=>window.removeEventListener(type,listener));
-  jest.restoreAllMocks();
-  global.fetch=originalFetch;
-  window.history.replaceState(null,'','/');
-  document.body.innerHTML='';
+  jest.restoreAllMocks(); global.fetch=originalFetch;
+  window.history.replaceState(null,'','/'); document.body.innerHTML='';
 });
 
-it('authenticates before loading embedded media and keeps filtering authenticated',async()=>{
-  const source='https://media.example/episode.m3u8?token=a+b&part=2';
+it('authenticates before creating the embedded player and passes the session to its internal library',async()=>{
+  const source='https://www.iqiyi.com/v_19rrjaail0.html';
   window.history.replaceState(null,'','/parse?'+new URLSearchParams({url:source}));
-  require('../demo');
-  expect(create).not.toHaveBeenCalled();
+  require('../demo'); expect(create).not.toHaveBeenCalled();
   await new Promise(resolve=>setTimeout(resolve,0));
-  expect(create).toHaveBeenCalledTimes(1);
-  expect(create).toHaveBeenCalledWith(expect.objectContaining({url:source,prepareMedia:expect.any(Function),autoplay:false}));
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({url:'',prepareMedia:expect.any(Function),library:expect.objectContaining({source,parser:'ql',auth:expect.objectContaining({accessToken:expect.any(Function)})})}));
   expect(document.body.dataset.embedded).toBe('true');
 });
 
-it('shows an invalid query error without loading any media',()=>{
+it('shows unsafe query errors without creating a player',()=>{
   window.history.replaceState(null,'','/parse?url=javascript:alert(1)');
   require('../demo');
-  expect(create).not.toHaveBeenCalled();
-  expect(document.body.dataset.entryError).toBe('true');
-  expect(document.querySelector('#status')!.textContent).toContain('HTTP(S)');
+  expect(create).not.toHaveBeenCalled(); expect(document.body.dataset.entryError).toBe('true');
 });
 
-it('generates a ready-to-copy link from the homepage without exposing credentials',()=>{
-  window.history.replaceState(null,'','/');
+it('puts feature configuration on the player rather than adding page-level search/route controls',()=>{
   require('../demo');
-  const source='https://media.example/episode.m3u8?token=a+b&part=2';
-  (document.querySelector('#source') as HTMLInputElement).value=source;
-  (document.querySelector('#share-source') as HTMLButtonElement).click();
-  const link=document.querySelector('#playback-link') as HTMLInputElement;
-  expect(link.hidden).toBe(false);
-  expect(new URL(link.value).pathname).toBe('/parse');
-  expect(new URL(link.value).searchParams.get('url')).toBe(source);
-  expect(new URL(link.value).username).toBe('');
-  expect(new URL(link.value).password).toBe('');
-  (document.querySelector('#source-form') as HTMLFormElement).dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
-  expect(create).toHaveBeenLastCalledWith(expect.objectContaining({url:source}));
-  expect(create.mock.results[0].value.destroy).toHaveBeenCalledTimes(1);
+  const options=create.mock.calls[0][0];
+  expect(options.library.searchEndpoint).toBe('/api/player/search');
+  expect(document.querySelector('.parser-menu')).toBeNull();
+  expect(document.querySelector('#source-form')).toBeNull();
+  const source='https://v.qq.com/x/cover/show/episode.html?token=a+b&part=2';
+  const link=new URL(options.library.shareLink(source,'ql'));
+  expect(link.pathname).toBe('/parse'); expect(link.searchParams.get('url')).toBe(source);
+  expect(link.searchParams.get('parser')).toBe('ql');
+});
+
+it('accepts a film name for M1907 links',()=>{
+  window.history.replaceState(null,'','/?'+new URLSearchParams({url:'西游记',parser:'m1907'}));
+  require('../demo');
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({url:'',library:expect.objectContaining({source:'西游记',parser:'m1907'})}));
+});
+
+it('keeps static deployments usable while clearly disabling unavailable search/resolver endpoints',()=>{
+  Object.assign(global,{__CRAYON_PREPARE_ENDPOINT__:''});
+  require('../demo');
+  expect(create.mock.calls[0][0].library).toMatchObject({searchEndpoint:false,detailEndpoint:false,resolveEndpoint:false});
 });

@@ -8,6 +8,7 @@ import { EnhancementOptions } from './plugin';
 import { attachVodFile, attachVodHls, attachVodRecovery, vodFilteredTime, vodSourceDuration, vodSourceTime } from './vod-playback';
 import { sourceToFilteredTime } from './vod-segment-filter';
 import { PLAYBACK_POLICY_CHANGE, relayModePreference, saveRelayModePreference, saveServerRelayPreference, serverRelayPreference } from './relay-settings';
+import { attachVideoLibrary, VideoLibraryOptions, VideoLibraryController } from './library';
 
 export type { CastOptions, CastSource, PreparedCastSource } from './casting';
 export { attachCasting, prepareCastSdk } from './casting';
@@ -27,6 +28,11 @@ export type { VodAdFilterResult, VodAdRange } from './vod-segment-filter';
 export { filterVodAdSegments } from './vod-segment-filter';
 export type { NetworkOptions } from './network-settings';
 export type { PrefetchLanes } from './vod-network';
+export type { VideoLibraryOptions, VideoLibraryController } from './library';
+export { attachVideoLibrary } from './library';
+export { parserRoutes, videoPlatforms, parserPage, officialPage } from './library-sources';
+export type { ParserId, VideoPlatform, VideoSearchResult, VideoDetailResult } from './library-sources';
+export type CrayonPlayer = Artplayer & { library?: VideoLibraryController };
 
 type ArtOptions = ConstructorParameters<typeof Artplayer>[0];
 export interface CrayonPlayerOptions {
@@ -51,10 +57,12 @@ export interface CrayonPlayerOptions {
   /** @deprecated Use player instead. */
   artplayer?: Partial<ArtOptions>;
   prepareMedia?: string | MediaPreparer;
+  /** Optional search, episodes and parser controls inside the player's fullscreen root. */
+  library?: VideoLibraryOptions;
 }
 
 /** Standalone VOD player. Host applications can also install just crayonPlayerPlugin. */
-export function createCrayonPlayer(options: CrayonPlayerOptions): Artplayer {
+export function createCrayonPlayer(options: CrayonPlayerOptions): CrayonPlayer {
   // eslint-disable-next-line prefer-const -- Callbacks are declared before construction and close over this binding.
   let art: Artplayer;
   let destroyed = false;
@@ -70,12 +78,14 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): Artplayer {
   let advanced = false;
   let wake: { release(): Promise<void> } | undefined;
   let wakePending = false;
+  let progressKey = options.storageKey;
+  let identity = options.url;
   const skip = { enabled: false, intro: 0, outro: 0, ...options.skip };
   try {
-    const saved = options.storageKey && localStorage.getItem(options.storageKey);
+    const saved = progressKey && localStorage.getItem(progressKey);
     if (saved) {
       const record = JSON.parse(saved);
-      if (record.url === options.url && Number.isFinite(record.time) && record.time >= 0) resume = record.time;
+      if (record.url === identity && Number.isFinite(record.time) && record.time >= 0) resume = record.time;
     }
   } catch { /* Storage is optional in private browsing. */ }
   const sourceUrl = () => art?.option.url || options.url;
@@ -210,7 +220,7 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): Artplayer {
     if (destroyed || !Number.isFinite(art.currentTime)) return;
     const time = vodSourceTime(art.video);
     const duration = vodSourceDuration(art.video);
-    try { if (options.storageKey) localStorage.setItem(options.storageKey, JSON.stringify({ url: sourceUrl(), time })); } catch { /* optional */ }
+    try { if (progressKey) localStorage.setItem(progressKey, JSON.stringify({ url: identity, time })); } catch { /* optional */ }
     options.onProgress?.(time, duration);
   }
   async function releaseWake() {
@@ -266,5 +276,29 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): Artplayer {
     window.removeEventListener('pagehide', save);
   });
   art.title = options.title || '';
-  return art;
+  const player = art as CrayonPlayer;
+  if (options.library) player.library = attachVideoLibrary(art, options.library, {
+    initialUrl: options.url,
+    suspend: () => {
+      save(); art.pause();
+      art.template.$player.dispatchEvent(new Event(PLAYBACK_POLICY_CHANGE));
+      delete art.video.vodNativeRequest;
+      art.video.hls?.destroy(); art.video.vodNetwork?.destroy();
+      delete art.video.hls; delete art.video.vodAdFilter;
+      art.video.removeAttribute('src'); art.video.load();
+      art.loading.show = false;
+    },
+    media: (url, original, type, title) => {
+      identity = original; progressKey = `crayon-library:${original}`;
+      resume = undefined; resumePlaying = false; advanced = false; lastSave = 0;
+      try {
+        const saved = JSON.parse(localStorage.getItem(progressKey) || 'null');
+        if (saved?.url === identity && Number.isFinite(saved.time) && saved.time >= 0) resume = saved.time;
+      } catch { /* Storage is optional. */ }
+      art.option.type = type; art.option.url = url; art.title = title || options.title || 'Crayon Player';
+      if (type === 'm3u8' || /\.m3u8(?:[?#]|$)/i.test(url)) hlsType(art.video, url);
+      else fileType(art.video, url);
+    },
+  });
+  return player;
 }

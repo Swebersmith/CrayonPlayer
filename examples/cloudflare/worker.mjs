@@ -1,6 +1,8 @@
 /// <reference path="./worker-configuration.d.ts" />
 import { handleMediaRelay } from '../../src/media-relay';
 import { authorizeViewer, embeddedSession, handleViewerAuth, viewerLoginPage } from './viewer-auth.mjs';
+import { handleParserResolver } from './parser-resolver.mjs';
+import { handleVideoCatalog } from '../../src/video-catalog';
 
 export default {
   /** @param {Request} request @param {Env} env */
@@ -8,6 +10,12 @@ export default {
     if (!env.MEDIA_SECRET || !env.VIEWER_PASSWORD) return new Response('请配置 MEDIA_SECRET 和 VIEWER_PASSWORD',{status:503});
     const auth = await handleViewerAuth(request, env);
     if (auth) return auth;
+    const catalog = await handleVideoCatalog(request, async request =>
+      await authorizeViewer(request, env) || !!await embeddedSession(request, env));
+    if (catalog) return catalog;
+    const resolved = await handleParserResolver(request, async request =>
+      await authorizeViewer(request, env) || !!await embeddedSession(request, env));
+    if (resolved) return resolved;
     const relay = await handleMediaRelay(request,{
       secret: env.MEDIA_SECRET,
       authorize: async request => await authorizeViewer(request,env) || !!await embeddedSession(request,env),

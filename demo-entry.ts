@@ -1,3 +1,5 @@
+import { playbackSource } from './src/library-sources';
+
 export const demoSource = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
 
 export function mediaAddress(value: string): string {
@@ -18,14 +20,15 @@ export function playbackEntry(href: string) {
   const source = page.searchParams.get('url');
   try {
     if (source === null && parse) throw new Error('缺少视频地址，请使用 /parse?url=编码后的视频地址。');
-    return { embedded, url: mediaAddress(source === null ? demoSource : source), error: '' };
+    return { embedded, url: playbackSource(source === null ? demoSource : source, page.searchParams.get('parser') || 'native'), error: '' };
   } catch (error) {
     return { embedded, url: '', error: (error as Error).message };
   }
 }
 
-export function playbackLink(href: string, source: string, hosted: boolean): string {
+export function playbackLink(href: string, source: string, hosted: boolean, parser = ''): string {
   const page = new URL(hosted ? '/parse' : './', href);
-  page.searchParams.set('url', mediaAddress(source));
+  page.searchParams.set('url', playbackSource(source, parser || 'native'));
+  if (parser) page.searchParams.set('parser', parser);
   return page.href;
 }

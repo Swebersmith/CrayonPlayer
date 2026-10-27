@@ -9,6 +9,7 @@ coverage/
 .package-check/
 .npm-cache/
 .dev.vars*
+.parser-inspection/
 *.tgz
 release/
 examples/cloudflare/worker-configuration.d.ts
