@@ -2,7 +2,8 @@ import type Artplayer from 'artplayer';
 import type { MediaPreparerAuth } from './media-client';
 import { toggleCrayonFullscreen } from './fullscreen';
 import { attachLibraryMenu } from './library-menu';
-import { httpSource, officialPage, parserPage, parserRoute, parserRoutes, playbackSource, videoPlatforms, ParserId, VideoItem, VideoSearchResult, VideoDetailResult } from './library-sources';
+import { animateContent, cancelPanelMotion, morphPanel } from './player-theme';
+import { httpSource, officialPage, parserPage, parserRoute, parserRoutes, playbackSource, videoPlatforms, ParserId, VideoItem, VideoEpisode, VideoSearchResult, VideoDetailResult } from './library-sources';
 
 export interface VideoLibraryOptions {
   source?: string;
@@ -13,9 +14,12 @@ export interface VideoLibraryOptions {
   auth?: MediaPreparerAuth;
   onSourceChange?: (source: string, parser: ParserId) => void;
   shareLink?: (source: string, parser: ParserId) => string;
+  /** Optional official episode pages supplied by a host. Search selections fill this automatically. */
+  episodes?: readonly VideoEpisode[];
 }
 export interface VideoLibraryController {
   open: () => void;
+  openEpisodes: () => void;
   play: (source: string, parser?: ParserId, title?: string) => Promise<void>;
   source: () => string;
   parser: () => ParserId;
@@ -27,40 +31,68 @@ interface PlaybackActions {
   initialUrl: string;
 }
 const css = `
-[data-crayon-library]{font:13px/1.5 system-ui,sans-serif;color:#edf4ed;--library-accent:#b2e0bc}
+[data-crayon-library]{font:13px/1.5 Inter,"Segoe UI",system-ui,sans-serif;color:var(--crayon-ink,#f3f6fa)}
 [data-crayon-library] *{box-sizing:border-box}[data-crayon-library] [hidden]{display:none!important}
-[data-crayon-library] button,[data-crayon-library] input,[data-crayon-library] select{font:inherit;color:inherit;border:1px solid #4b6554;border-radius:7px;background:#18281e;padding:7px 10px;min-width:0}
-[data-crayon-library] button{cursor:pointer;white-space:nowrap}[data-crayon-library] button:hover{background:#304738}[data-crayon-library] button:disabled{opacity:.6;cursor:wait}
-[data-crayon-library] button:focus-visible,[data-crayon-library] input:focus-visible,[data-crayon-library] select:focus-visible{outline:2px solid #b2e0bc;outline-offset:2px}
-.crayon-library-bar{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:120;display:flex;justify-content:center;gap:7px;width:max-content;max-width:calc(100% - 24px);padding:9px;border:1px solid #ffffff26;border-radius:12px;background:#101b15e8;box-shadow:0 8px 28px #0006}
-.crayon-library-bar button{padding:5px 9px;background:#132219e8;box-shadow:0 2px 10px #0005}
-.crayon-library-wake{position:absolute;top:0;left:50%;transform:translateX(-50%);z-index:121;width:88px;height:20px;padding:0!important;border:0!important;border-radius:0 0 7px 7px!important;background:transparent!important;opacity:0;transition:opacity .15s}
-.crayon-library-wake[aria-expanded=true]:hover,.crayon-library-wake:focus-visible{opacity:1;background:#132219ed!important}
-.crayon-library-panel{position:absolute;inset:0;z-index:150;display:flex;flex-direction:column;background:#101b15;padding:14px;overflow:hidden;user-select:text}
-.crayon-library-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;font-weight:600}.crayon-library-heading strong{font-size:16px}
-.crayon-library-form{display:flex;gap:6px}.crayon-library-form input{flex:1;width:100%;background:#0c1510;font-size:16px}
-.crayon-library-filters{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.crayon-library-filters label{display:flex;gap:5px;align-items:center}.crayon-library-filters select{padding:5px;max-width:185px}
-.crayon-library-status{margin:8px 0;color:#b9d3c0;min-height:20px;overflow-wrap:anywhere;font-size:12px}
-.crayon-library-results{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:7px;padding:2px 2px 8px;touch-action:pan-y}
-.crayon-library-result{text-align:left;white-space:normal!important;display:flex;flex-direction:column;gap:3px}.crayon-library-result strong{font-size:14px}.crayon-library-result span{color:#abc0b1;font-size:12px}
-.crayon-library-episodes{display:flex;gap:6px;flex-wrap:wrap;align-content:flex-start}.crayon-library-episodes button{min-width:70px}
-.crayon-library-platforms{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.crayon-library-platforms [aria-pressed=true]{background:#b2e0bc;color:#102416}
-.crayon-library-notice{position:absolute;top:48px;left:10px;right:10px;z-index:115;padding:9px 12px;border-radius:8px;background:#14251eed;color:#d6e9db;overflow-wrap:anywhere;pointer-events:none}
+[data-crayon-library] button,[data-crayon-library] input,[data-crayon-library] select{font:inherit;color:inherit;border:1px solid #ffffff14;border-radius:11px;background:#ffffff06;padding:8px 12px;min-width:0}
+[data-crayon-library] button{cursor:pointer;white-space:nowrap;font-weight:500}[data-crayon-library] button:hover{background:#ffffff10;border-color:#a1e6d038;color:#c6f4e7}[data-crayon-library] button:disabled{opacity:.45;cursor:wait}
+[data-crayon-library] input,[data-crayon-library] select{outline:none;transition:border-color .25s,box-shadow .25s;background:#0c121a75}
+[data-crayon-library] input:focus,[data-crayon-library] select:focus{border-color:#a1e6d069;box-shadow:0 0 0 3px #a1e6d00a}
+.crayon-library-bar{position:absolute;top:clamp(12px,4%,24px);left:50%;transform:translateX(-50%);z-index:120;display:flex;justify-content:center;gap:3px;width:max-content;max-width:calc(100% - 24px);padding:5px;border:1px solid #ffffff18;border-radius:16px;background:var(--crayon-glass,linear-gradient(145deg,#1b2330f5,#111821f5));box-shadow:0 8px 32px #0005,inset 0 1px #ffffff05;backdrop-filter:blur(22px)}
+.crayon-library-bar button{display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 11px;background:transparent;border-color:transparent;border-radius:11px;font-size:12px;line-height:18px}
+.crayon-library-icon{display:inline-flex;flex:none;width:16px;height:16px;opacity:.8}.crayon-library-icon svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.crayon-library-wake{position:absolute;top:0;left:50%;transform:translateX(-50%);z-index:121;width:88px;height:20px;padding:0!important;border:0!important;border-radius:0 0 8px 8px!important;background:transparent!important;opacity:0;transition:opacity .15s}
+.crayon-library-wake[aria-expanded=true]:hover,.crayon-library-wake:focus-visible{opacity:1;background:#18222eed!important}
+.crayon-library-panel{position:absolute;inset:68px 16px 14px;max-width:760px;margin:0 auto;z-index:150;display:flex;flex-direction:column;background:var(--crayon-glass,linear-gradient(145deg,#1b2330f5,#111821f5));border:1px solid #ffffff16;border-radius:20px;box-shadow:0 24px 80px #0008;backdrop-filter:blur(26px);padding:18px;overflow:hidden;user-select:text}
+.crayon-library-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}.crayon-library-heading strong{font-size:18px;line-height:1.35;font-weight:600;letter-spacing:-.02em}.crayon-library-eyebrow{display:block;font-size:9px;letter-spacing:.2em;color:#7f90a5;margin-bottom:3px}.crayon-library-heading [data-action=close]{padding:6px 9px;font-size:12px}
+.crayon-library-tabs{display:flex;gap:5px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #ffffff0c}
+.crayon-library-tabs button{padding:5px 14px;font-size:12px;border-color:transparent;background:transparent;color:#95a5b8}
+.crayon-library-tabs [aria-selected=true]{background:#a1e6d010;border-color:#a1e6d020;color:#bdeedb}
+.crayon-library-form{display:flex;gap:7px}.crayon-library-form input{flex:1;width:100%;font-size:16px;padding:8px 12px}.crayon-library-form [type=submit]{background:#a1e6d0;color:#10251f;border-color:transparent;font-weight:600}.crayon-library-form [type=submit]:hover{background:#b6eedc;color:#10251f}
+.crayon-library-filters{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}.crayon-library-filters label{display:flex;gap:7px;align-items:center;font-size:11px;color:#8496ac}.crayon-library-filters select{padding:5px 8px;max-width:180px;font-size:12px;color:#d6e0eb}.crayon-library-filters [data-action=share]{padding:5px 9px;font-size:11px}
+.crayon-library-status{margin:9px 0;color:#8fa8b5;min-height:18px;overflow-wrap:anywhere;font-size:11px}
+.crayon-library-status:empty{display:none}
+.crayon-library-results,.crayon-library-episode-view,.crayon-library-route-view{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#ffffff24 transparent;padding:2px 2px 6px;touch-action:pan-y}
+.crayon-library-results{display:flex;flex-direction:column;gap:8px}
+.crayon-library-result{text-align:left;white-space:normal!important;display:flex;flex-direction:column;gap:4px;padding:12px 14px!important;background:#ffffff03!important}.crayon-library-result:hover{background:#ffffff08!important}.crayon-library-result strong{font-size:14px;font-weight:550}.crayon-library-result span{color:#8395aa;font-size:11px;line-height:1.5}
+.crayon-library-collection-title{display:block;font-size:16px;margin:3px 0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crayon-library-episodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:7px;align-content:start}
+.crayon-library-episodes button{min-height:36px;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.crayon-library-episodes [aria-current=true]{background:#a1e6d01b;border-color:#a1e6d05c;color:#c7f4e6;box-shadow:inset 0 0 0 1px #a1e6d00d}
+.crayon-library-platforms{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 12px}.crayon-library-platforms button{padding:5px 10px;font-size:12px}.crayon-library-platforms [aria-pressed=true]{background:#a1e6d015;color:#c3f0e0;border-color:#a1e6d03d}
+.crayon-library-empty{display:grid;justify-items:start;align-content:center;gap:10px;min-height:100px;padding:10px;color:#92a3b7}.crayon-library-empty strong{font-size:15px;color:#d5dfeb}.crayon-library-empty p{font-size:12px;margin:0;line-height:1.7;max-width:440px}
+.crayon-library-route-view{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
+.crayon-library-route-choice{text-align:left;white-space:normal!important;padding:12px!important}.crayon-library-route-choice strong{display:block;font-size:13px}.crayon-library-route-choice small{display:block;font-size:11px;line-height:1.5;color:#8093a9;margin-top:4px}.crayon-library-route-choice[aria-pressed=true]{border-color:#a1e6d05c;background:#a1e6d012;color:#c3f1df}
+.crayon-library-notice{position:absolute;top:74px;left:16px;right:16px;z-index:115;padding:10px 14px;border:1px solid #ffffff12;border-radius:12px;background:#16212eea;color:#bdceda;font-size:12px;overflow-wrap:anywhere;pointer-events:none;backdrop-filter:blur(18px)}
 .crayon-library-external{position:absolute;inset:0;width:100%;height:100%;border:0;z-index:100;background:#000}
 [data-crayon-library-external=true]>.art-video,[data-crayon-library-external=true]>.art-bottom,[data-crayon-library-external=true]>.art-controls,[data-crayon-library-external=true]>.art-mask,[data-crayon-library-external=true]>.art-loading,[data-crayon-library-external=true]>.art-state,[data-crayon-library-external=true]>.art-layers{visibility:hidden}
-.crayon-library-share{width:100%;margin-top:7px}
-[data-crayon-library][data-compact=true] .crayon-library-panel{padding:7px}
-[data-crayon-library][data-compact=true] .crayon-library-heading{margin-bottom:5px}
+.crayon-library-share{width:100%;margin:0 0 8px}
+[data-crayon-library][data-compact=true] .crayon-library-bar{top:10px;padding:4px;gap:1px;border-radius:14px}
+[data-crayon-library][data-compact=true] .crayon-library-bar button{padding:6px 10px;font-size:12px}
+[data-crayon-library][data-compact=true] .crayon-library-bar .crayon-library-icon{display:none}
+[data-crayon-library][data-compact=true] .crayon-library-panel{inset:7px;max-width:none;padding:8px;border-radius:14px}
+[data-crayon-library][data-compact=true] .crayon-library-eyebrow{display:none}
+[data-crayon-library][data-compact=true] .crayon-library-heading{margin-bottom:4px;min-height:24px}
 [data-crayon-library][data-compact=true] .crayon-library-heading strong{font-size:14px}
-[data-crayon-library][data-compact=true] .crayon-library-heading button,[data-crayon-library][data-compact=true] .crayon-library-form button,[data-crayon-library][data-compact=true] .crayon-library-form input{padding:4px 7px}
-[data-crayon-library][data-compact=true] .crayon-library-filters{margin-top:5px;flex-wrap:nowrap}
+[data-crayon-library][data-compact=true] .crayon-library-heading [data-action=close]{padding:3px 7px;font-size:11px}
+[data-crayon-library][data-compact=true] .crayon-library-tabs{margin-bottom:5px;padding-bottom:4px;gap:4px}
+[data-crayon-library][data-compact=true] .crayon-library-tabs button{font-size:11px;padding:2px 10px}
+[data-crayon-library][data-compact=true] .crayon-library-form button,[data-crayon-library][data-compact=true] .crayon-library-form input{padding:4px 7px}
+[data-crayon-library][data-compact=true] .crayon-library-filters{margin-top:5px;flex-wrap:nowrap;gap:5px}
 [data-crayon-library][data-compact=true] .crayon-library-filters label{font-size:0;gap:0;flex:1;min-width:0}
-[data-crayon-library][data-compact=true] .crayon-library-filters select{font-size:11px;padding:4px;width:100%;max-width:100%}
+[data-crayon-library][data-compact=true] .crayon-library-filters select{font-size:11px;padding:3px;width:100%;max-width:100%}
 [data-crayon-library][data-compact=true] [data-action=share]{display:none}
-[data-crayon-library][data-compact=true] .crayon-library-status{margin:4px 0;font-size:11px;min-height:16px}
-[data-crayon-library][data-compact=true] .crayon-library-result{padding:5px 8px}
+[data-crayon-library][data-compact=true] .crayon-library-status{margin:4px 0;font-size:10px;min-height:15px}
+[data-crayon-library][data-compact=true] .crayon-library-result{padding:6px 9px!important;gap:2px}
 [data-crayon-library][data-compact=true] .crayon-library-result .description{display:none}
-@media(max-height:400px){.crayon-library-panel{padding:8px}.crayon-library-heading{margin-bottom:6px}.crayon-library-heading strong{font-size:14px}.crayon-library-filters{margin-top:5px}.crayon-library-status{margin:4px 0;min-height:17px}.crayon-library-filters select{max-width:145px}.crayon-library-result{padding:5px 8px!important}.crayon-library-result span.description{display:none}}
+[data-crayon-library][data-compact=true] .crayon-library-collection-title{font-size:13px;margin:2px 0 5px}
+[data-crayon-library][data-compact=true] .crayon-library-platforms{margin:4px 0 7px}
+[data-crayon-library][data-compact=true] .crayon-library-collection-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}
+[data-crayon-library][data-compact=true] .crayon-library-collection-meta strong{margin:0;min-width:0}
+[data-crayon-library][data-compact=true] .crayon-library-collection-meta .crayon-library-platforms{margin:0;flex-shrink:0}
+[data-crayon-library][data-compact=true] .crayon-library-panel[data-view=episodes] .crayon-library-status{display:none}
+[data-crayon-library][data-compact=true] .crayon-library-episodes{grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:5px}
+[data-crayon-library][data-compact=true] .crayon-library-episodes button{min-height:30px;padding:4px 6px;font-size:11px}
+@media(prefers-reduced-motion:reduce){[data-crayon-library] *{scroll-behavior:auto!important}}
 `;
 const platformName = (id: string) => videoPlatforms.find(item => item.id === id)?.name || id;
 const endpoint = (value: string | false | undefined, fallback: string) => value === false ? undefined : value || fallback;
@@ -70,14 +102,18 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
   const root = art.template.$player;
   const host = document.createElement('div'); host.dataset.crayonLibrary = '';
   const style = document.createElement('style'); style.textContent = css;
-  host.innerHTML = `<button type="button" class="crayon-library-wake" data-action="menu" aria-label="打开播放器菜单" aria-expanded="false" title="打开菜单（轻触画面或按 M）">菜单</button><div class="crayon-library-bar" role="toolbar" aria-label="播放器菜单"><button type="button" data-action="search" aria-label="搜索视频">搜索</button><button type="button" data-action="routes">线路</button><button type="button" data-action="retry" aria-label="重新解析">重试</button><button type="button" data-action="fullscreen" aria-label="播放器全屏">全屏</button></div>
+  const icons = { search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/>', episodes: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16M13 9h4M13 14h4"/>', routes: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>', retry: '<path d="M20 7v5h-5M4 17v-5h5M19 12a7 7 0 0 0-12-5L4 10m1 2a7 7 0 0 0 12 5l3-3"/>', fullscreen: '<path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6"/>' };
+  const actionButton = (action: keyof typeof icons, label: string, aria = label) => `<button type="button" data-action="${action}" aria-label="${aria}"><span class="crayon-library-icon" aria-hidden="true"><svg viewBox="0 0 24 24">${icons[action]}</svg></span><span>${label}</span></button>`;
+  host.innerHTML = `<button type="button" class="crayon-library-wake" data-action="menu" aria-label="打开播放器菜单" aria-expanded="false" title="打开菜单（轻触画面或按 M）">菜单</button><div class="crayon-library-bar" role="toolbar" aria-label="播放器菜单">${actionButton('search','搜索','搜索视频')}${actionButton('episodes','选集')}${actionButton('routes','线路')}${actionButton('retry','重试','重新解析')}${actionButton('fullscreen','全屏','播放器全屏')}</div>
     <div class="crayon-library-notice" role="status" aria-live="polite" hidden></div>
     <section class="crayon-library-panel" role="dialog" aria-label="搜索与播放" hidden>
-      <div class="crayon-library-heading"><strong>搜索与播放</strong><button type="button" data-action="close" aria-label="关闭搜索">关闭</button></div>
-      <form class="crayon-library-form"><input type="text" aria-label="影片名称或播放页地址" placeholder="输入影片名称或具体播放页网址" autocomplete="off" maxlength="8192"><button type="submit">搜索</button><button type="button" data-action="open-source">播放</button></form>
+      <div class="crayon-library-heading"><div><small class="crayon-library-eyebrow">CRAYON / PLAYER</small><strong data-panel-title>发现你想看的</strong></div><button type="button" data-action="close" aria-label="关闭面板">关闭</button></div>
+      <nav class="crayon-library-tabs" role="tablist" aria-label="播放器面板"><button type="button" role="tab" data-view="search" aria-selected="true">搜索</button><button type="button" role="tab" data-view="episodes" aria-selected="false">选集</button><button type="button" role="tab" data-view="routes" aria-selected="false">线路</button></nav>
+      <form class="crayon-library-form"><input type="text" aria-label="影片名称或播放页地址" placeholder="搜索片名，或粘贴播放页网址" autocomplete="off" maxlength="8192"><button type="submit">搜索</button><button type="button" data-action="open-source">播放</button></form>
       <div class="crayon-library-filters"><label>平台 <select data-field="platform" aria-label="视频平台"><option value="all">全部五平台</option></select></label><label>搜索 <select data-field="catalog" aria-label="搜索来源"><option value="auto">自动</option><option value="360">影视目录</option><option value="sogou">网页补充</option></select></label><label>线路 <select data-field="parser" aria-label="解析线路"></select></label><button type="button" data-action="share">播放链接</button></div>
       <div class="crayon-library-status" role="status" aria-live="polite"></div><input class="crayon-library-share" readonly aria-label="生成的播放链接" hidden>
       <div class="crayon-library-results"></div>
+      <div class="crayon-library-episode-view" hidden></div><div class="crayon-library-route-view" hidden></div>
     </section>`;
   host.prepend(style); root.append(host);
   const panel = host.querySelector<HTMLElement>('.crayon-library-panel')!;
@@ -88,6 +124,10 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
   const status = host.querySelector<HTMLElement>('.crayon-library-status')!;
   const notice = host.querySelector<HTMLElement>('.crayon-library-notice')!;
   const results = host.querySelector<HTMLElement>('.crayon-library-results')!;
+  const episodeView = host.querySelector<HTMLElement>('.crayon-library-episode-view')!;
+  const routeView = host.querySelector<HTMLElement>('.crayon-library-route-view')!;
+  const filters = host.querySelector<HTMLElement>('.crayon-library-filters')!;
+  const sourceForm = host.querySelector<HTMLFormElement>('.crayon-library-form')!;
   const share = host.querySelector<HTMLInputElement>('.crayon-library-share')!;
   const routeButton = host.querySelector<HTMLButtonElement>('[data-action=routes]')!;
   for (const item of videoPlatforms) platform.add(new Option(item.name, item.id));
@@ -96,6 +136,11 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
   let selected: ParserId = options.parser || (officialPage(source) ? 'ql' : 'native');
   route.value = selected;
   let sourceTitle = '';
+  type Collection = { item: VideoItem; platform: string; detail: VideoDetailResult };
+  let collection: Collection | undefined;
+  let panelOrigin: DOMRect | undefined;
+  let panelVersion = 0;
+  let panelClosing = false;
   let disposed = false, playVersion = 0, searchVersion = 0;
   let loadRequest: AbortController | undefined, searchRequest: AbortController | undefined;
   let frame: HTMLIFrameElement | undefined, frameTimer: ReturnType<typeof setTimeout> | undefined;
@@ -106,9 +151,43 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
   const detailEndpoint = endpoint(options.detailEndpoint, '/api/player/detail');
   const resolveEndpoint = endpoint(options.resolveEndpoint, '/api/player/resolve');
   const message = (text: string, overlay = false) => { status.textContent = text; notice.textContent = text; notice.hidden = !overlay || !text; };
-  const syncRoute = () => { route.value = selected; routeButton.textContent = selected === 'native' ? '线路' : parserRoute(selected).name.split(' · ')[0]; };
-  const close = () => { panel.hidden = true; wake.hidden = false; menu.show(); restoreFocus?.focus(); };
-  const open = () => { restoreFocus = document.activeElement as HTMLElement | null; panel.hidden = false; wake.hidden = true; menu.hide(); notice.hidden = true; query.focus(); };
+  const syncRoute = () => { route.value = selected; routeButton.title = '当前线路：' + parserRoute(selected).name; };
+  const setView = (view: 'search' | 'episodes' | 'routes') => {
+    panel.dataset.view = view;
+    panel.setAttribute('aria-label', view === 'search' ? '搜索与播放' : view === 'episodes' ? '选集' : '播放线路');
+    host.querySelector<HTMLElement>('[data-panel-title]')!.textContent = view === 'search' ? '发现你想看的' : view === 'episodes' ? '选择剧集' : '选择播放线路';
+    sourceForm.hidden = filters.hidden = results.hidden = view !== 'search';
+    episodeView.hidden = view !== 'episodes'; routeView.hidden = view !== 'routes'; share.hidden = true;
+    host.querySelectorAll<HTMLButtonElement>('.crayon-library-tabs [data-view]').forEach(button => button.setAttribute('aria-selected', String(button.dataset.view === view)));
+    if (view === 'episodes') renderEpisodes();
+    if (view === 'routes') renderRoutes();
+  };
+  const close = () => {
+    if (panel.hidden) { wake.hidden = false; menu.show(); return; }
+    if (panelClosing) return;
+    panelClosing = true;
+    const version = ++panelVersion;
+    void morphPanel(root, panel, panelOrigin, false).then(done => {
+      if (!done || disposed || version !== panelVersion) return;
+      panelClosing = false;
+      wake.hidden = false; menu.show(); restoreFocus?.focus();
+    });
+  };
+  const openView = (view: 'search' | 'episodes' | 'routes', trigger?: HTMLElement) => {
+    panelVersion++;
+    const opening = panel.hidden;
+    const reopening = panelClosing;
+    panelClosing = false;
+    if (opening) {
+      restoreFocus = document.activeElement as HTMLElement | null;
+      panelOrigin = (trigger || host.querySelector<HTMLElement>(`[data-action=${view}]`))?.getBoundingClientRect();
+    }
+    setView(view); wake.hidden = true; menu.hide(); notice.hidden = true;
+    if (opening || reopening) void morphPanel(root, panel, panelOrigin, true);
+    else animateContent(view === 'episodes' ? episodeView : view === 'routes' ? routeView : results);
+    if (view === 'search') query.focus(); else host.querySelector<HTMLButtonElement>(`.crayon-library-tabs [data-view=${view}]`)?.focus();
+  };
+  const open = () => openView('search');
   const removeFrame = () => { clearTimeout(frameTimer); frame?.remove(); frame = undefined; delete root.dataset.crayonLibraryExternal; };
   const request = async (url: string, controller: AbortController, body?: unknown) => {
     const token = options.auth?.accessToken();
@@ -128,6 +207,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     searchVersion++; searchRequest?.abort(); searchRequest = undefined;
     loadRequest?.abort(); removeFrame(); playback.suspend();
     source = validated; sourceTitle = title; selected = parser; syncRoute(); share.hidden = true;
+    if (collection && !collection.detail.episodes.some(episode => officialPage(episode.url)?.url === officialPage(source)?.url)) collection = undefined;
     options.onSourceChange?.(source, selected);
     close();
     if (parser === 'native') { playback.media(httpSource(source), source, '', title); message(''); return; }
@@ -159,29 +239,80 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     root.append(currentFrame); message('正在加载 ' + parserRoute(parser).name + '…', true);
   };
   const button = (text: string, click: () => void) => { const item = document.createElement('button'); item.type = 'button'; item.textContent = text; item.addEventListener('click', click); return item; };
-  const details = async (item: VideoItem, chosen = item.links[0]?.platform || '') => {
+  function renderCollection(current: Collection, target: HTMLElement, back = false) {
+    target.replaceChildren();
+    if (back) target.append(button('← 返回搜索结果', () => { void search(); }));
+    const heading = document.createElement('strong'); heading.className = 'crayon-library-collection-title'; heading.textContent = current.item.title;
+    const platforms = document.createElement('div'); platforms.className = 'crayon-library-platforms';
+    for (const id of current.item.platforms) {
+      const tab = button(platformName(id), () => {
+        if (current.item.id === 'provided') renderCollection({ ...current, platform: id }, target, back);
+        else void details(current.item, id, target, back);
+      });
+      tab.setAttribute('aria-pressed', String(id === current.platform)); platforms.append(tab);
+    }
+    const episodes = document.createElement('div'); episodes.className = 'crayon-library-episodes';
+    for (const episode of current.detail.episodes) {
+      const link = officialPage(episode.url);
+      if (!link || link.platform !== current.platform) continue;
+      const choice = button(episode.title, () => {
+        collection = current;
+        void play(link.url, selected === 'native' ? 'ql' : selected, current.item.title + ' · ' + episode.title).catch(error => message(error.message));
+      });
+      choice.setAttribute('aria-current', String(officialPage(source)?.url === link.url));
+      episodes.append(choice);
+    }
+    const meta = document.createElement('div'); meta.className = 'crayon-library-collection-meta';
+    meta.append(heading, platforms); target.append(meta, episodes);
+    message(episodes.childElementCount ? `${platformName(current.platform)} · ${episodes.childElementCount} 个可选播放页` : '这个平台暂未提供可用分集，请选择其他平台。');
+    animateContent(target);
+  }
+  function renderEpisodes() {
+    if (!collection && options.episodes?.length) {
+      const episodes = options.episodes.flatMap(episode => {
+        const link = officialPage(episode.url);
+        return link && link.platform === episode.platform ? [{ ...episode, url: link.url }] : [];
+      });
+      const platforms = [...new Set(episodes.map(episode => episode.platform))];
+      const sourcePlatform = officialPage(source)?.platform;
+      if (episodes.length) collection = {
+        item: { id: 'provided', title: sourceTitle || art.title || '当前影片', year: '', description: '', platforms, links: episodes.map(episode => ({ platform: episode.platform, url: episode.url })) },
+        platform: sourcePlatform && platforms.includes(sourcePlatform) ? sourcePlatform : platforms[0],
+        detail: { title: sourceTitle || art.title || '当前影片', episodes, platforms, total: episodes.length },
+      };
+    }
+    if (collection) { renderCollection(collection, episodeView); return; }
+    episodeView.replaceChildren();
+    const empty = document.createElement('div'); empty.className = 'crayon-library-empty';
+    const title = document.createElement('strong'); title.textContent = '还没有这部影片的分集信息';
+    const explanation = document.createElement('p'); explanation.textContent = '搜索影片并选择平台播放后，分集会保留在这里，随时打开即可继续选集。单条视频直链可能没有分集。';
+    empty.append(title, explanation, button('搜索影片', () => openView('search')));
+    episodeView.append(empty); message('');
+  }
+  function renderRoutes() {
+    routeView.replaceChildren();
+    for (const item of parserRoutes) {
+      const choice = button('', () => {
+        if (source) void play(source, item.id).catch(error => message(error.message));
+        else { selected = item.id; syncRoute(); renderRoutes(); message(item.note); }
+      });
+      choice.className = 'crayon-library-route-choice'; choice.setAttribute('aria-pressed', String(item.id === selected));
+      const title = document.createElement('strong'); title.textContent = item.name;
+      const note = document.createElement('small'); note.textContent = item.note;
+      choice.append(title, note); routeView.append(choice);
+    }
+    message(''); animateContent(routeView);
+  }
+  const details = async (item: VideoItem, chosen = item.links[0]?.platform || '', target: HTMLElement = results, back = true) => {
     if (!detailEndpoint || !chosen) return;
     searchRequest?.abort(); const controller = new AbortController(); searchRequest = controller;
     const version = ++searchVersion, timer = setTimeout(() => controller.abort(), 18000);
-    results.replaceChildren();
-    const back = button('← 返回搜索结果', () => { void search(); });
-    const heading = document.createElement('strong'); heading.textContent = item.title;
-    const platforms = document.createElement('div'); platforms.className = 'crayon-library-platforms';
-    for (const id of item.platforms) {
-      const tab = button(platformName(id), () => { void details(item, id); }); tab.setAttribute('aria-pressed', String(id === chosen)); platforms.append(tab);
-    }
-    results.append(back, heading, platforms); message('正在读取分集…');
+    target.replaceChildren(); message('正在读取分集…');
     try {
       const url = new URL(detailEndpoint, location.href); url.search = new URLSearchParams({ id: item.id, platform: chosen }).toString();
       const data = await request(url.href, controller) as VideoDetailResult;
       if (disposed || version !== searchVersion) return;
-      const episodes = document.createElement('div'); episodes.className = 'crayon-library-episodes';
-      for (const episode of data.episodes) {
-        const link = officialPage(episode.url); if (!link || link.platform !== chosen) continue;
-        episodes.append(button(episode.title, () => { void play(link.url, selected === 'native' ? 'ql' : selected, item.title + ' · ' + episode.title).catch(error => message(error.message)); }));
-      }
-      results.append(episodes);
-      message(episodes.childElementCount ? `${platformName(chosen)} · ${episodes.childElementCount} 个可选播放页` : '这个平台暂未提供可用分集，请选择其他平台。');
+      renderCollection({ item, platform: chosen, detail: data }, target, back);
     } catch (error) { if (!disposed && version === searchVersion) message(controller.signal.aborted ? '分集读取超时，请重试。' : (error as Error).message); }
     finally { clearTimeout(timer); }
   };
@@ -204,15 +335,18 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
         const description = document.createElement('span'); description.className = 'description'; description.textContent = item.description;
         row.append(title, meta, description); results.append(row);
       }
+      animateContent(results);
       message(`${data.source} · ${data.items.length} 条结果${data.warning ? ' · ' + data.warning : ''}${data.items.length ? '' : '；可调整名称或切换搜索来源。'}`);
     } catch (error) { if (!disposed && version === searchVersion) message(controller.signal.aborted ? '搜索超时，请重试或切换搜索来源。' : (error as Error).message); }
     finally { clearTimeout(timer); }
   };
   const onClick = (event: Event) => {
-    const action = (event.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
+    const trigger = (event.target as HTMLElement).closest<HTMLElement>('[data-action]');
+    const action = trigger?.dataset.action;
+    const view = (event.target as HTMLElement).closest<HTMLElement>('button[data-view]')?.dataset.view;
+    if (view === 'search' || view === 'episodes' || view === 'routes') openView(view);
     if (action === 'menu') menu.show();
-    if (action === 'search') open();
-    if (action === 'routes') { open(); route.focus(); }
+    if (action === 'search' || action === 'episodes' || action === 'routes') openView(action, trigger || undefined);
     if (action === 'close') close();
     if (action === 'fullscreen') void toggleCrayonFullscreen(art);
     if (action === 'retry') void play(source).catch(error => message(error.message, true));
@@ -227,7 +361,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
   panel.addEventListener('keydown', event => {
     if (event.key === 'Escape') { event.preventDefault(); close(); }
     if (event.key === 'Tab') {
-      const items = Array.from(panel.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([hidden]),select'));
+      const items = Array.from(panel.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([hidden]),select')).filter(item => !item.closest('[hidden]'));
       const first = items[0], last = items[items.length - 1];
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
@@ -243,8 +377,8 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
   const resize = () => { host.dataset.compact = String(root.getBoundingClientRect().height < 340); };
   const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(resize);
   observer?.observe(root); window.addEventListener('resize', resize); resize();
-  const destroy = () => { if (disposed) return; disposed = true; playVersion++; searchVersion++; menu.destroy(); loadRequest?.abort(); searchRequest?.abort(); observer?.disconnect(); window.removeEventListener('resize', resize); removeFrame(); host.remove(); };
+  const destroy = () => { if (disposed) return; disposed = true; panelVersion++; cancelPanelMotion(panel); playVersion++; searchVersion++; menu.destroy(); loadRequest?.abort(); searchRequest?.abort(); observer?.disconnect(); window.removeEventListener('resize', resize); removeFrame(); host.remove(); };
   art.on('destroy', destroy); syncRoute();
   if (source && (selected !== 'native' || source !== playback.initialUrl)) void play(source, selected).catch(error => message(error.message, true));
-  return { open, play, source: () => source, parser: () => selected, destroy };
+  return { open, openEpisodes: () => openView('episodes'), play, source: () => source, parser: () => selected, destroy };
 }

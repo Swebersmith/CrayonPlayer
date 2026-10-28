@@ -3,6 +3,7 @@ import type Artplayer from 'artplayer';
 import { setHlsAlternative } from './vod-playback';
 import type { VodAdFilterResult } from './vod-segment-filter';
 import { PLAYBACK_POLICY_CHANGE } from './relay-settings';
+import { cancelPanelMotion, morphPanel } from './player-theme';
 
 export interface CastSource { url: string; title?: string; type?: string; currentTime?: number }
 export interface PreparedCastSource extends CastSource {
@@ -218,13 +219,17 @@ export function attachCasting(art: Artplayer, options: CastOptions) {
   trigger.setAttribute('aria-expanded', 'false');
   trigger.style.cssText = 'background:transparent;color:inherit;border:0;cursor:pointer;padding:6px;display:flex;align-items:center';
   trigger.innerHTML = '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M2 12a10 10 0 0 1 10 10M2 17a5 5 0 0 1 5 5"/><circle cx="2" cy="22" r="1"/></svg>';
-  function close() { panel.hidden = true; trigger.setAttribute('aria-expanded', 'false'); }
+  function close() {
+    trigger.setAttribute('aria-expanded', 'false');
+    if (!panel.hidden) void morphPanel(art.template.$player, panel, trigger.getBoundingClientRect(), false);
+  }
   trigger.onclick = () => {
     if (options.getHint) hint.textContent = options.getHint();
     warm();
-    panel.hidden = !panel.hidden;
-    trigger.setAttribute('aria-expanded', String(!panel.hidden));
-    if (!panel.hidden) native.focus();
+    const opening = trigger.getAttribute('aria-expanded') !== 'true';
+    trigger.setAttribute('aria-expanded', String(opening));
+    void morphPanel(art.template.$player, panel, trigger.getBoundingClientRect(), opening);
+    if (opening) native.focus();
   };
   art.controls.add({ name: 'crayonCast', position: 'right', index: 18, html: trigger, tooltip: '投屏' });
   const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !panel.hidden) { close(); trigger.focus(); } };
@@ -248,7 +253,7 @@ export function attachCasting(art: Artplayer, options: CastOptions) {
     art.template.$player.removeEventListener(PLAYBACK_POLICY_CHANGE, sourceChanged);
     art.off('control', control);
     art.off('video:canplay', warm);
-    panel.remove();
+    cancelPanelMotion(panel); panel.remove();
     art.controls.remove('crayonCast');
   };
 }

@@ -34,6 +34,7 @@ it('reveals a hidden menu on the first native tap even if the existing controls 
 
 it('keeps keyboard navigation available and leaves an open search panel alone',()=>{
   menu.hide();wake.focus();expect(bar.hidden).toBe(false);
+  art.emit('control',false);expect(bar.hidden).toBe(false);
   jest.advanceTimersByTime(5000);expect(bar.hidden).toBe(false);
   bar.querySelector('button')!.focus();art.emit('control',false);expect(bar.hidden).toBe(false);
   bar.querySelector('button')!.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));expect(bar.hidden).toBe(true);

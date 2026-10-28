@@ -1,5 +1,6 @@
 import type Artplayer from 'artplayer';
 import type { Setting } from 'artplayer/types/setting';
+import { attachPlayerTheme } from './player-theme';
 
 /** A tappable setting opens a real range input, including on phones. */
 export function volumeSetting(): Setting {
@@ -29,6 +30,7 @@ export function volumeSetting(): Setting {
 }
 
 export function attachPlayerUi(art: Artplayer, showGestures = true) {
+  const disposeTheme = attachPlayerTheme(art);
   const root = art.template.$player;
   const oldMaxHeight = root.style.getPropertyValue('--art-settings-max-height');
   root.style.setProperty('--art-settings-max-height', 'min(300px, calc(100% - 56px))');
@@ -95,6 +97,7 @@ export function attachPlayerUi(art: Artplayer, showGestures = true) {
   art.on('video:timeupdate', autoHide);
   art.on('video:volumechange', syncVolume);
   return () => {
+    disposeTheme();
     dismissGuide(); guide.remove();
     if (oldMaxHeight) root.style.setProperty('--art-settings-max-height',oldMaxHeight);
     else root.style.removeProperty('--art-settings-max-height');

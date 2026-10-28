@@ -6,15 +6,30 @@ export function attachLibraryMenu(art: Artplayer, host: HTMLElement, bar: HTMLEl
   let timer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false, keyboard = false;
   let touchUntil = 0, menuAtTouch = false;
+  let motion: Animation | undefined;
+  let hiding = false;
+  const animate = typeof bar.animate === 'function' && !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
   const hide = () => {
     clearTimeout(timer);
-    bar.hidden = true;
     wake.setAttribute('aria-expanded', 'false');
+    if (hiding || bar.hidden) return;
+    bar.setAttribute('inert', '');
+    if (!animate || disposed) { motion?.cancel(); bar.hidden = true; return; }
+    const opacity = getComputedStyle(bar).opacity;
+    hiding = true; motion?.cancel();
+    const animation = bar.animate([{opacity,translate:'0 0'},{opacity:0,translate:'0 -6px'}],{duration:180,easing:'cubic-bezier(.22,.8,.25,1)',fill:'both'});
+    motion = animation;
+    void animation.finished.catch(()=>undefined).then(()=>{ if(motion===animation){bar.hidden=true;animation.cancel();motion=undefined;hiding=false;} });
   };
   const show = (fromKeyboard = false) => {
     if (disposed || !panel.hidden || art.isLock) return;
     keyboard = fromKeyboard;
+    const entering = bar.hidden || hiding;
+    hiding = false;
+    if (entering) { motion?.cancel(); motion = undefined; }
+    bar.removeAttribute('inert');
     bar.hidden = false;
+    if (entering && animate) motion = bar.animate([{opacity:0,translate:'0 -8px'},{opacity:1,translate:'0 0'}],{duration:280,easing:'cubic-bezier(.22,.8,.25,1)'});
     wake.setAttribute('aria-expanded', 'true');
     clearTimeout(timer);
     timer = setTimeout(() => {
@@ -26,7 +41,7 @@ export function attachLibraryMenu(art: Artplayer, host: HTMLElement, bar: HTMLEl
     if ((event as PointerEvent).pointerType === 'touch') return;
     show();
   };
-  const leave = () => { if (!(keyboard && bar.contains(document.activeElement))) hide(); };
+  const leave = () => { if (!(keyboard && (bar.contains(document.activeElement) || document.activeElement === wake))) hide(); };
   const pointer = () => { keyboard = false; };
   const touch = (event: TouchEvent) => {
     if (event.target !== art.video) return;
@@ -76,7 +91,7 @@ export function attachLibraryMenu(art: Artplayer, host: HTMLElement, bar: HTMLEl
   return {
     show, hide,
     destroy() {
-      disposed = true; hide();
+      disposed = true; hiding = false; hide(); motion?.cancel();
       root.removeEventListener('pointermove', move);
       root.removeEventListener('pointerenter', move);
       root.removeEventListener('pointerleave', leave);

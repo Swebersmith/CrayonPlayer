@@ -4,10 +4,10 @@ import { chromium } from 'playwright-core';
 
 const bundle = await readFile('dist/crayon-player.iife.js');
 const html = `<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#101714;display:grid;place-items:center;min-height:100vh}#player{width:min(960px,100vw);height:min(540px,56.25vw)}</style><div id="player"></div><script src="/player.js"></script><script>
-const p=CrayonPlayer.createCrayonPlayer({container:'#player',url:'',enhancements:{casting:false},library:{searchEndpoint:false,detailEndpoint:false,resolveEndpoint:false}});
+const p=CrayonPlayer.createCrayonPlayer({container:'#player',url:'',enhancements:{casting:{chromecast:false}},library:{searchEndpoint:false,detailEndpoint:false,resolveEndpoint:false,episodes:Array.from({length:24},(_,i)=>({title:'第 '+(i+1)+' 集',url:'https://www.iqiyi.com/v_episode'+(i+1)+'.html',platform:'iqiyi'}))}});
 window.testPlayer=p;p.loading.show=false;
 const c=document.createElement('canvas');c.width=960;c.height=540;const ctx=c.getContext('2d');
-setInterval(()=>{ctx.fillStyle='#203c36';ctx.fillRect(0,0,960,540);ctx.fillStyle='#b2e0bc';ctx.font='24px sans-serif';ctx.fillText('CRAYON PLAYER',42,68)},100);
+setInterval(()=>{const g=ctx.createLinearGradient(0,0,960,540);g.addColorStop(0,'#1e3548');g.addColorStop(1,'#0c141e');ctx.fillStyle=g;ctx.fillRect(0,0,960,540);ctx.fillStyle='#b0d9d0';ctx.font='16px sans-serif';ctx.fillText('CRAYON / PLAYER',42,92)},100);
 p.video.srcObject=c.captureStream(5);p.video.muted=true;void p.video.play();
 </script></html>`;
 const server = createServer((request,response)=>{
@@ -21,10 +21,13 @@ try {
   for(const mobile of [false,true]) {
     const context=await browser.newContext({viewport:mobile?{width:390,height:844}:{width:1280,height:800},hasTouch:mobile,isMobile:mobile});
     const page=await context.newPage();
+    page.on('pageerror',error=>console.error('Browser error:',error.message));
+    page.setDefaultTimeout(15000);
     await page.route('https://art.txnp.cn/**',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><button id="upstream" onclick="this.textContent=\'Clicked\'">Upstream player</button>'}));
+    await page.route('https://svip.qlplayer.cyou/**',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><button id="upstream">Episode player</button>'}));
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
     const root=page.locator('[data-player="crayon-player"]'), bar=page.locator('.crayon-library-bar'), wake=page.locator('.crayon-library-wake');
-    await page.waitForFunction(()=>window.testPlayer.video.currentTime>0);
+    await page.waitForFunction(()=>window.testPlayer?.video.currentTime>0,null,{timeout:15000});
     await page.waitForTimeout(2800);
     if(!await bar.evaluate(element=>element.hidden))throw new Error('Idle menu obstructs playback');
     const opacity=await wake.evaluate(element=>getComputedStyle(element).opacity);
@@ -32,12 +35,29 @@ try {
     const bounds=await root.boundingBox();
     if(mobile) await page.touchscreen.tap(bounds.x+bounds.width*.2,bounds.y+bounds.height*.35); else await page.mouse.move(bounds.x+20,bounds.y+20);
     await bar.waitFor({state:'visible'});
+    await page.waitForTimeout(320);
     const menu=await bar.boundingBox();
-    if(Math.abs(menu.x+menu.width/2-bounds.x-bounds.width/2)>2 || Math.abs(menu.y+menu.height/2-bounds.y-bounds.height/2)>2)throw new Error('Menu is not centered');
+    if(Math.abs(menu.x+menu.width/2-bounds.x-bounds.width/2)>2 || menu.y<bounds.y || menu.y+menu.height>bounds.y+bounds.height*.36)throw new Error('Menu is not upper-centered');
     await page.screenshot({path:`.parser-inspection/menu-${mobile?'mobile':'desktop'}-open.png`});
     await page.mouse.move(0,0); await page.waitForTimeout(2800);
     if(!await bar.evaluate(element=>element.hidden))throw new Error('Menu did not auto-hide');
     await page.screenshot({path:`.parser-inspection/menu-${mobile?'mobile':'desktop'}-hidden.png`});
+    await wake.focus();
+    await page.waitForTimeout(350);
+    await page.locator('[data-action="episodes"]').click();
+    await page.waitForTimeout(420);
+    if(await page.locator('.crayon-library-episode-view .crayon-library-episodes button').count()!==24)throw new Error('Episode view did not expand');
+    await page.screenshot({path:`.parser-inspection/episodes-${mobile?'mobile':'desktop'}.png`});
+    await page.evaluate(()=>{window.testPlayer.library.open();document.querySelector('[data-action=close]').click();window.testPlayer.library.openEpisodes()});
+    await page.waitForTimeout(420);
+    if(await page.locator('.crayon-library-panel').evaluate(el=>el.hidden || el.dataset.view!=='episodes'))throw new Error('Interrupted panel animation hid the reopened view');
+    await page.locator('.crayon-library-episode-view .crayon-library-episodes button').nth(4).click();
+    await page.locator('.crayon-library-panel').waitFor({state:'hidden'});
+    await wake.focus();await page.locator('[data-action="episodes"]').click();
+    await page.waitForTimeout(420);
+    if(await page.locator('.crayon-library-episode-view [aria-current="true"]').textContent()!=='第 5 集')throw new Error('Active episode was lost');
+    await page.locator('[data-action="close"]').click();
+    await page.locator('.crayon-library-panel').waitFor({state:'hidden'});
     await wake.focus(); await page.locator('[data-action="search"]').click();
     await page.waitForTimeout(2800);
     if(await page.locator('.crayon-library-panel').evaluate(element=>element.hidden))throw new Error('Search was closed by the menu timer');
@@ -54,7 +74,23 @@ try {
     await bar.waitFor({state:'visible'});
     await page.waitForTimeout(2800);
     if(!await bar.evaluate(element=>element.hidden) || await wake.evaluate(element=>getComputedStyle(element).opacity)!=='0')throw new Error('Hovered wake target obstructs idle viewing');
-    console.log(JSON.stringify({mobile,centered:true,autoHidden:true,wakeUnpainted:true,searchStaysOpen:true,fullscreen:true,externalWake:true}));
+    console.log(JSON.stringify({mobile,upperCentered:true,episodes:24,currentEpisode:5,autoHidden:true,wakeUnpainted:true,searchStaysOpen:true,fullscreen:true,externalWake:true}));
     await context.close();
   }
+  const native=await browser.newPage();await native.goto(`http://127.0.0.1:${server.address().port}/`);
+  await native.evaluate(()=>window.testPlayer.setting.show=true);await native.waitForTimeout(420);
+  if(!await native.locator('.art-settings').isVisible())throw new Error('Native settings failed to expand');
+  await native.evaluate(()=>{window.testPlayer.setting.show=false;window.testPlayer.setting.show=true});await native.waitForTimeout(420);
+  if(!await native.locator('.art-settings').isVisible())throw new Error('Reopened settings were hidden by a stale animation');
+  await native.evaluate(()=>window.testPlayer.setting.show=false);await native.waitForTimeout(420);
+  await native.evaluate(()=>{window.testPlayer.controls.show=true;document.querySelector('button[aria-label=投屏]').click()});await native.waitForTimeout(420);
+  if(!await native.locator('[data-crayon-cast-panel]').isVisible())throw new Error('Casting panel failed to expand');
+  await native.locator('[data-crayon-cast-panel] button').last().click();await native.waitForTimeout(420);
+  if(await native.locator('[data-crayon-cast-panel]').isVisible() || await native.locator('.crayon-morph-surface').count())throw new Error('Panel motion left an obstruction');
+  console.log(JSON.stringify({settingsMotion:true,castingMotion:true,interruptedMotion:true}));await native.close();
+  const calm=await browser.newContext({reducedMotion:'reduce'});
+  const calmPage=await calm.newPage();await calmPage.goto(`http://127.0.0.1:${server.address().port}/`);
+  await calmPage.locator('.crayon-library-wake').focus();await calmPage.locator('[data-action="episodes"]').click();
+  if(await calmPage.locator('.crayon-morph-surface').count())throw new Error('Reduced motion still morphs');
+  console.log(JSON.stringify({reducedMotion:true}));await calm.close();
 } finally {await browser.close();server.close();}

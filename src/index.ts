@@ -144,7 +144,7 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): CrayonPlayer {
     poster: options.poster || '', autoplay: options.autoplay ?? false, volume: 0.7,
     pip: true, setting: true, playbackRate: true, fullscreen: true,
     fullscreenWeb: true, airplay: true, playsInline: true, lock: true,
-    autoOrientation: true, theme: '#22c55e', lang: 'zh-cn',
+    autoOrientation: true, theme: '#a1e6d0', lang: 'zh-cn',
     ...playerOptions,
     container: options.container, url: options.url, id: playerOptions.id || 'crayon-player',
     customType: { m3u8: hlsType, mp4: fileType, ...playerOptions.customType },

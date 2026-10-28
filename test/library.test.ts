@@ -28,7 +28,23 @@ it('keeps search, episodes and selected-page playback inside the actual player r
   expect(media).toHaveBeenCalledWith('https://media.example/resolved.m3u8',source,'m3u8',expect.stringContaining('25'));
   expect(library.source()).toBe(source); expect(library.parser()).toBe('ql');
   expect((root.querySelector('.crayon-library-panel') as HTMLElement).hidden).toBe(true);
+  const calls=(global.fetch as jest.Mock).mock.calls.length;
+  library.openEpisodes();
+  expect((root.querySelector('.crayon-library-panel') as HTMLElement).dataset.view).toBe('episodes');
+  expect(root.querySelector('.crayon-library-episode-view [aria-current=true]')!.textContent).toBe('第 25 集');
+  expect((global.fetch as jest.Mock).mock.calls).toHaveLength(calls);
   expect(document.querySelector('[data-crayon-library]')!.closest('[data-crayon-library]')!.parentElement).toBe(root);
+});
+
+it('opens a dedicated episode view with host-provided pages and a clear empty state',()=>{
+  library=attachVideoLibrary(art,{source,parser:'native',episodes:[{title:'第25集',url:source,platform:'iqiyi'},{title:'第26集',url:'https://www.iqiyi.com/v_next.html',platform:'iqiyi'}]}, {suspend,media,initialUrl:source});
+  library.openEpisodes();
+  expect(art.template.$player.querySelectorAll('.crayon-library-episode-view .crayon-library-episodes button')).toHaveLength(2);
+  library.destroy();
+  library=attachVideoLibrary(art,{}, {suspend,media,initialUrl:''});
+  library.openEpisodes();
+  expect(art.template.$player.querySelector('.crayon-library-empty')!.textContent).toContain('还没有');
+  expect(art.template.$player.querySelector('.crayon-library-episodes')).toBeNull();
 });
 
 it('accepts names only on M1907 and embeds its jx page within the player',async()=>{
