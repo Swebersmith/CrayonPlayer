@@ -34,10 +34,11 @@ export default {
     const embedded = navigation && (pageUrl.searchParams.get('embed') === '1' ||
       /^\/parse\/?$/.test(pageUrl.pathname) && pageUrl.searchParams.get('embed') !== '0' ||
       request.headers.get('Sec-Fetch-Dest') === 'iframe');
-    // Only the embed UI and its compiled JS/CSS are public. All preparation still
+    // The embed UI, compiled JS/CSS and the two brand images are public. All preparation still
     // requires a verified session; no video is loaded before the UI authenticates.
     const publicUi = ['GET', 'HEAD'].includes(request.method) &&
-      (embedded || /^\/assets\/[\w-]+\.(?:js|css)$/.test(pageUrl.pathname));
+      (embedded || /^\/assets\/[\w-]+\.(?:js|css)$/.test(pageUrl.pathname) ||
+        ['/brand/yingyu-logo-dark.png', '/brand/yingyu-icon.svg'].includes(pageUrl.pathname));
     if (!publicUi && !await authorizeViewer(request,env)) {
       const url = new URL(request.url);
       const navigation = url.pathname === '/' || /^\/parse\/?$/.test(url.pathname) || request.headers.get('Accept')?.includes('text/html');

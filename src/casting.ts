@@ -195,7 +195,7 @@ export function attachCasting(art: Artplayer, options: CastOptions) {
       const type = mediaSource.type || source.type || (/\.m3u8(?:[?#]|$)/i.test(url.href) ? 'application/x-mpegURL' : 'video/mp4');
       const media = new chrome.media.MediaInfo(url.href, type);
       const metadata = new chrome.media.GenericMediaMetadata();
-      metadata.title = source.title || art.title || 'Crayon Player';
+      metadata.title = source.title || art.title || '映屿 YINGYU';
       media.metadata = metadata;
       const request = new chrome.media.LoadRequest(media);
       const originalTime = options.getSource().currentTime ?? source.currentTime ?? art.currentTime;

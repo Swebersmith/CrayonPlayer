@@ -40,7 +40,7 @@ export function createCrayonPlayerCore(
   art.template?.$player?.setAttribute('data-player', 'crayon-player');
   art.contextmenu?.update({
     name: 'version',
-    html: '<a href="https://github.com/Swebersmith/CrayonPlayer" target="_blank" rel="noopener noreferrer">Crayon Player</a>',
+    html: '<a href="https://github.com/Swebersmith/CrayonPlayer" target="_blank" rel="noopener noreferrer">映屿 YINGYU</a>',
   });
   return art;
 }

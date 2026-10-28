@@ -22,7 +22,7 @@ function start() {
   try {
     const parser = initialParser(window.location.href, entry.url);
     player = createCrayonPlayer({
-      container: '#player', url: parser === 'native' ? entry.url : '', title: 'Crayon Player', autoplay: false,
+      container: '#player', url: parser === 'native' ? entry.url : '', title: '映屿 YINGYU', autoplay: false,
       storageKey: `crayon-player-demo:${entry.url}`,
       prepareMedia: embeddedLogin ? createMediaPreparer(__CRAYON_PREPARE_ENDPOINT__, embeddedLogin) : __CRAYON_PREPARE_ENDPOINT__ || undefined,
       library: {

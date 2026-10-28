@@ -344,9 +344,14 @@ it('issues private partitioned embed sessions, preserves a strict origin check a
     expect(logout.status).toBe(200);
     expect(logout.headers.get('Set-Cookie')).toContain('Partitioned; Max-Age=0');
     expect((await runtime.dispatchFetch('https://player.example/auth/embed/logout', { method: 'POST', headers: { Origin: 'https://host.example' } })).status).toBe(403);
-    for (const path of ['/parse?url=https://media.example/a.m3u8', '/?embed=1', '/assets/index-example.js']) {
+    for (const path of ['/parse?url=https://media.example/a.m3u8', '/?embed=1', '/assets/index-example.js', '/brand/yingyu-logo-dark.png', '/brand/yingyu-icon.svg']) {
       expect(await (await runtime.dispatchFetch('https://player.example' + path)).text()).toContain('Authenticated player');
     }
+    for (const path of ['/brand/private.png', '/assets/private.png', '/brand/yingyu-icon.svg/private']) {
+      expect((await runtime.dispatchFetch('https://player.example' + path)).status).toBe(401);
+    }
+    expect((await runtime.dispatchFetch('https://player.example/brand/yingyu-logo-dark.png', { method: 'HEAD' })).status).toBe(200);
+    expect((await runtime.dispatchFetch('https://player.example/brand/yingyu-logo-dark.png', { method: 'POST' })).status).toBe(401);
     expect(await (await runtime.dispatchFetch('https://player.example/parse?embed=0')).text()).toContain('输入访问密码');
     expect(await (await runtime.dispatchFetch('https://player.example/parse?embed=0', { headers: { 'Sec-Fetch-Dest': 'iframe' } })).text()).toContain('Authenticated player');
   } finally { await runtime.dispose(); }

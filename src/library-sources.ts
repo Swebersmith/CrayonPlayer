@@ -7,10 +7,10 @@ export const videoPlatforms = [
 ] as const;
 export type VideoPlatform = typeof videoPlatforms[number]['id'];
 export const parserRoutes = [
-  { id: 'native', name: 'Crayon · 直链', prefix: '', note: '用于 MP4、M3U8 等媒体地址。' },
+  { id: 'native', name: '映屿 · 直链', prefix: '', note: '用于 MP4、M3U8 等媒体地址。' },
   { id: 'tx', name: 'TX · 弹幕解析', prefix: 'https://art.txnp.cn/', note: '输入视频网站的具体播放页地址。' },
   { id: 'sd', name: 'SD · 解析', prefix: 'https://bfq.txnp.cn/excessive', note: '输入视频网站的具体播放页地址。' },
-  { id: 'ql', name: 'QL · 麒麟', prefix: 'https://svip.qlplayer.cyou/', note: '详情页通过服务端解析，使用 Crayon 播放。' },
+  { id: 'ql', name: 'QL · 麒麟', prefix: 'https://svip.qlplayer.cyou/', note: '详情页通过服务端解析，使用 映屿 播放。' },
   { id: 'aibox', name: 'AIBox · 臻享视听', prefix: 'https://aibox.eu.org/', note: '输入视频网站的具体播放页地址；可用性取决于上游。' },
   { id: 'm1907', name: 'M1907 · 名称 / 网址', prefix: 'https://im1907.top/', note: '支持影片名称或播放页地址。' },
 ] as const;
