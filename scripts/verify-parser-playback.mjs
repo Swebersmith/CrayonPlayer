@@ -37,7 +37,9 @@ try {
   await page.goto(url.href);
   await page.locator('input[name="password"]').fill('local-test-only-password');
   await page.locator('button[type="submit"]').click();
+  const revealMenu = () => page.locator('.crayon-library-wake').focus();
   if (searchMode) {
+    await revealMenu();
     await page.locator('[data-action="search"]').click();
     await page.locator('.crayon-library-form input').fill('西游记');
     await page.locator('.crayon-library-form button[type="submit"]').click();
@@ -56,7 +58,7 @@ try {
   await page.locator('video').evaluate(video => { video.muted = true; void video.play(); });
   await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2, null, { timeout: 35000 });
   await page.waitForFunction(() => document.querySelector('video')?.currentTime > 1, null, { timeout: 15000 });
-  await page.locator('[data-action="routes"]').click();
+  await revealMenu(); await page.locator('[data-action="routes"]').click();
   await page.screenshot({ path: '.parser-inspection/ql-native-playback.png' });
   const result = await page.locator('video').evaluate(video => ({ currentTime: video.currentTime, readyState: video.readyState, duration: video.duration, paused: video.paused }));
   result.errors = errors;

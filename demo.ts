@@ -36,7 +36,7 @@ function start() {
       ...(embeddedLogin ? { player: { settings: [{ name: 'viewerLogout', html: '退出登录', onClick() { void embeddedLogin!.logout(); return '退出登录'; } }] } } : {}),
     });
     document.body.dataset.entryError = 'false';
-    status.textContent = '在播放器右上角搜索影片、粘贴具体播放页、选择分集或切换解析线路。搜索和线路在全屏及嵌入模式中也可使用。';
+    status.textContent = '轻触画面或移动鼠标可唤出中央菜单，2.5 秒无操作后自动隐藏。也可轻触画面顶部边缘，或在播放器内按 M 打开菜单；全屏和嵌入模式同样可用。';
     if (embeddedLogin?.storageBlocked()) player.notice.show = '浏览器禁止保存登录状态，刷新后可能需要重新输入密码';
   } catch (error) { showError((error as Error).message); }
 }

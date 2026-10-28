@@ -1,6 +1,7 @@
 import type Artplayer from 'artplayer';
 import type { MediaPreparerAuth } from './media-client';
 import { toggleCrayonFullscreen } from './fullscreen';
+import { attachLibraryMenu } from './library-menu';
 import { httpSource, officialPage, parserPage, parserRoute, parserRoutes, playbackSource, videoPlatforms, ParserId, VideoItem, VideoSearchResult, VideoDetailResult } from './library-sources';
 
 export interface VideoLibraryOptions {
@@ -31,8 +32,10 @@ const css = `
 [data-crayon-library] button,[data-crayon-library] input,[data-crayon-library] select{font:inherit;color:inherit;border:1px solid #4b6554;border-radius:7px;background:#18281e;padding:7px 10px;min-width:0}
 [data-crayon-library] button{cursor:pointer;white-space:nowrap}[data-crayon-library] button:hover{background:#304738}[data-crayon-library] button:disabled{opacity:.6;cursor:wait}
 [data-crayon-library] button:focus-visible,[data-crayon-library] input:focus-visible,[data-crayon-library] select:focus-visible{outline:2px solid #b2e0bc;outline-offset:2px}
-.crayon-library-bar{position:absolute;top:8px;right:8px;z-index:120;display:flex;gap:5px;max-width:calc(100% - 16px)}
+.crayon-library-bar{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:120;display:flex;justify-content:center;gap:7px;width:max-content;max-width:calc(100% - 24px);padding:9px;border:1px solid #ffffff26;border-radius:12px;background:#101b15e8;box-shadow:0 8px 28px #0006}
 .crayon-library-bar button{padding:5px 9px;background:#132219e8;box-shadow:0 2px 10px #0005}
+.crayon-library-wake{position:absolute;top:0;left:50%;transform:translateX(-50%);z-index:121;width:88px;height:20px;padding:0!important;border:0!important;border-radius:0 0 7px 7px!important;background:transparent!important;opacity:0;transition:opacity .15s}
+.crayon-library-wake:hover,.crayon-library-wake:focus-visible{opacity:1;background:#132219ed!important}
 .crayon-library-panel{position:absolute;inset:0;z-index:150;display:flex;flex-direction:column;background:#101b15;padding:14px;overflow:hidden;user-select:text}
 .crayon-library-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;font-weight:600}.crayon-library-heading strong{font-size:16px}
 .crayon-library-form{display:flex;gap:6px}.crayon-library-form input{flex:1;width:100%;background:#0c1510;font-size:16px}
@@ -67,7 +70,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
   const root = art.template.$player;
   const host = document.createElement('div'); host.dataset.crayonLibrary = '';
   const style = document.createElement('style'); style.textContent = css;
-  host.innerHTML = `<div class="crayon-library-bar"><button type="button" data-action="search" aria-label="搜索视频">搜索</button><button type="button" data-action="routes">线路</button><button type="button" data-action="retry" aria-label="重新解析">重试</button><button type="button" data-action="fullscreen" aria-label="播放器全屏">全屏</button></div>
+  host.innerHTML = `<button type="button" class="crayon-library-wake" data-action="menu" aria-label="打开播放器菜单" aria-expanded="false" title="打开菜单（轻触画面或按 M）">菜单</button><div class="crayon-library-bar" role="toolbar" aria-label="播放器菜单"><button type="button" data-action="search" aria-label="搜索视频">搜索</button><button type="button" data-action="routes">线路</button><button type="button" data-action="retry" aria-label="重新解析">重试</button><button type="button" data-action="fullscreen" aria-label="播放器全屏">全屏</button></div>
     <div class="crayon-library-notice" role="status" aria-live="polite" hidden></div>
     <section class="crayon-library-panel" role="dialog" aria-label="搜索与播放" hidden>
       <div class="crayon-library-heading"><strong>搜索与播放</strong><button type="button" data-action="close" aria-label="关闭搜索">关闭</button></div>
@@ -97,13 +100,15 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
   let loadRequest: AbortController | undefined, searchRequest: AbortController | undefined;
   let frame: HTMLIFrameElement | undefined, frameTimer: ReturnType<typeof setTimeout> | undefined;
   let restoreFocus: HTMLElement | null = null;
+  const wake = host.querySelector<HTMLButtonElement>('.crayon-library-wake')!;
+  const menu = attachLibraryMenu(art, host, host.querySelector<HTMLElement>('.crayon-library-bar')!, wake, panel);
   const searchEndpoint = endpoint(options.searchEndpoint, '/api/player/search');
   const detailEndpoint = endpoint(options.detailEndpoint, '/api/player/detail');
   const resolveEndpoint = endpoint(options.resolveEndpoint, '/api/player/resolve');
   const message = (text: string, overlay = false) => { status.textContent = text; notice.textContent = text; notice.hidden = !overlay || !text; };
   const syncRoute = () => { route.value = selected; routeButton.textContent = selected === 'native' ? '线路' : parserRoute(selected).name.split(' · ')[0]; };
-  const close = () => { panel.hidden = true; restoreFocus?.focus(); };
-  const open = () => { restoreFocus = document.activeElement as HTMLElement | null; panel.hidden = false; notice.hidden = true; query.focus(); };
+  const close = () => { panel.hidden = true; wake.hidden = false; menu.show(); restoreFocus?.focus(); };
+  const open = () => { restoreFocus = document.activeElement as HTMLElement | null; panel.hidden = false; wake.hidden = true; menu.hide(); notice.hidden = true; query.focus(); };
   const removeFrame = () => { clearTimeout(frameTimer); frame?.remove(); frame = undefined; delete root.dataset.crayonLibraryExternal; };
   const request = async (url: string, controller: AbortController, body?: unknown) => {
     const token = options.auth?.accessToken();
@@ -150,7 +155,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     currentFrame.src = parserPage(parser, source);
     currentFrame.onload = () => { if (frame === currentFrame) { clearTimeout(frameTimer); message(parser === 'ql' ? '当前站点使用 QL 网页模式，可能需要域名授权。' : '网页已加载；播放结果由上游提供，可在画面内切换线路。'); } };
     currentFrame.onerror = () => { if (frame === currentFrame) message('线路加载失败，请在画面内切换线路。', true); };
-    frameTimer = setTimeout(() => { if (frame === currentFrame) message('线路等待较久，可在右上角切换线路或重试。', true); }, 20000);
+    frameTimer = setTimeout(() => { if (frame === currentFrame) message('线路等待较久，可轻触画面顶部边缘打开菜单，切换线路或重试。', true); }, 20000);
     root.append(currentFrame); message('正在加载 ' + parserRoute(parser).name + '…', true);
   };
   const button = (text: string, click: () => void) => { const item = document.createElement('button'); item.type = 'button'; item.textContent = text; item.addEventListener('click', click); return item; };
@@ -205,6 +210,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
   };
   const onClick = (event: Event) => {
     const action = (event.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
+    if (action === 'menu') menu.show();
     if (action === 'search') open();
     if (action === 'routes') { open(); route.focus(); }
     if (action === 'close') close();
@@ -237,7 +243,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
   const resize = () => { host.dataset.compact = String(root.getBoundingClientRect().height < 340); };
   const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(resize);
   observer?.observe(root); window.addEventListener('resize', resize); resize();
-  const destroy = () => { if (disposed) return; disposed = true; playVersion++; searchVersion++; loadRequest?.abort(); searchRequest?.abort(); observer?.disconnect(); window.removeEventListener('resize', resize); removeFrame(); host.remove(); };
+  const destroy = () => { if (disposed) return; disposed = true; playVersion++; searchVersion++; menu.destroy(); loadRequest?.abort(); searchRequest?.abort(); observer?.disconnect(); window.removeEventListener('resize', resize); removeFrame(); host.remove(); };
   art.on('destroy', destroy); syncRoute();
   if (source && (selected !== 'native' || source !== playback.initialUrl)) void play(source, selected).catch(error => message(error.message, true));
   return { open, play, source: () => source, parser: () => selected, destroy };
