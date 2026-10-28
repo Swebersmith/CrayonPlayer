@@ -21,6 +21,19 @@ const submit = async (name: string) => {
 const historyButton = () => (art.template.$player.querySelector('[data-action=history]') as HTMLButtonElement).click();
 const historyTerms = () => Array.from(art.template.$player.querySelectorAll('.crayon-library-history-term'), entry => entry.textContent);
 
+it('distinguishes the Mirage series from the same-title film and offers only official fallback navigation',async()=>{
+  global.fetch=jest.fn(async()=>response({source:'正版平台直搜',items:[
+    {...item,id:'iqiyi:6244560312265801',title:'海市蜃楼',year:'2025',type:'电视剧',episodeCount:24},
+    {...item,id:'iqiyi:2045522800',title:'海市蜃楼',year:'2018',type:'电影',episodeCount:1},
+  ],providers:[{platform:'youku',name:'优酷',status:'unavailable',count:0,searchUrl:'javascript:alert(1)'}],warning:'优酷暂时无法查询，结果可能不全。'})) as jest.Mock;
+  library=attachVideoLibrary(art,{}, {suspend,media,initialUrl:''});library.open();await submit('海市蜃楼');
+  const rows=art.template.$player.querySelectorAll('button.crayon-library-result');
+  expect(rows).toHaveLength(2);expect(rows[0].textContent).toContain('2025 · 电视剧 · 24 集/期');expect(rows[1].textContent).toContain('2018 · 电影');
+  const link=art.template.$player.querySelector<HTMLAnchorElement>('a.crayon-library-result')!;
+  expect(link.href).toBe('https://so.youku.com/search_video/q_'+encodeURIComponent('海市蜃楼'));
+  expect(new URL((global.fetch as jest.Mock).mock.calls[0][0]).searchParams.get('source')).toBe('official');
+});
+
 it('persists recent searches, deduplicates, reuses a term and removes only the chosen record',async()=>{
   global.fetch=jest.fn(async()=>response({items:[],source:'目录'})) as jest.Mock;
   const mount=()=>attachVideoLibrary(art,{}, {suspend,media,initialUrl:''});

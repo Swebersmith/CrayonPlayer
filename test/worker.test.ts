@@ -221,37 +221,43 @@ const embedLogin = (runtime:any, password = 'viewer-password', origin = 'https:/
   method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ password }).toString(),
 });
 
-it('serves authenticated five-platform search and episodes through fixed metadata providers',async()=>{
+it('serves authenticated official search and all Mirage episodes while isolating blocked platforms',async()=>{
   const code=esbuild.buildSync({entryPoints:['examples/cloudflare/worker.mjs'],bundle:true,write:false,format:'esm',platform:'browser'}).outputFiles[0].text;
   const upstream:Request[]=[];
-  const links={qq:'https://v.qq.com/x/cover/show/episode.html',qiyi:'https://www.iqiyi.com/v_19rrjaail0.html',youku:'https://v.youku.com/v_show/id_XMTEyMTU5MDI4.html',imgo:[{url:'https://www.mgtv.com/b/327378/5423583.html'}],bilibili1:'https://www.bilibili.com/bangumi/play/ep327134'};
+  const searchFixture=readFileSync(join(__dirname,'fixtures/catalog/iqiyi-search.json'),'utf8');
+  const episodesFixture=readFileSync(join(__dirname,'fixtures/catalog/iqiyi-episodes.json'),'utf8');
   const runtime=new Miniflare(convertV4MiniflareOptions({cf:false,workers:[{
     name:'crayon-catalog',compatibilityDate:'2026-10-23',modules:true,script:code,
     bindings:{MEDIA_SECRET:'development-media-secret-for-tests',VIEWER_PASSWORD:'viewer-password'},
     serviceBindings:{ASSETS:()=>new NativeResponse('Crayon Player')},
     outboundService:(request:Request)=>{
       upstream.push(request);
-      return new NativeResponse(JSON.stringify(new URL(request.url).hostname==='api.so.360kan.com'
-        ?{code:0,data:{longData:{rows:[{cat_id:'2',en_id:'show',titleTxt:'西游记',year:'1986',playlinks:links}]}}}
-        :{errno:0,data:{title:'西游记',playlinks:links,allepidetail:{qiyi:[{url:links.qiyi,playlink_num:'25'}]}}}));
+      const host=new URL(request.url).hostname;
+      if(host==='search.video.iqiyi.com')return new NativeResponse(searchFixture);
+      if(host==='pcw-api.iqiyi.com')return new NativeResponse(episodesFixture);
+      if(host==='pbaccess.video.qq.com')return new NativeResponse(JSON.stringify({ret:0,data:{errcode:0,normalList:{itemList:[]}}}));
+      if(host==='api.bilibili.com')return new NativeResponse(JSON.stringify({code:0,data:{result:[]}}));
+      if(host==='mobileso.bz.mgtv.com')return new NativeResponse(JSON.stringify({code:200,data:{contents:[],forbidden:2}}));
+      return new NativeResponse('_____tmd_____');
     },
   }]}));
   try{
     const get=(path:string,headers:Record<string,string>={})=>runtime.dispatchFetch('https://player.example/api/player/'+path,{headers});
     expect((await get('search?q=test')).status).toBe(401);expect(upstream).toHaveLength(0);
     const cookie=await loginCookie(runtime);const auth={Cookie:cookie};
-    for(const path of ['search?q=','search?q=test&platform=evil','search?q=test&source=https://evil.example','detail?id=https://evil.example'])expect((await get(path,auth)).status).toBe(400);
+    for(const path of ['search?q=','search?q=test&platform=evil','search?q=test&source=https://evil.example','search?q=test&source=360','detail?id=https://evil.example'])expect((await get(path,auth)).status).toBe(400);
     expect(upstream).toHaveLength(0);
-    const response=await get('search?q='+encodeURIComponent('西游记'),auth);
+    const response=await get('search?q='+encodeURIComponent('海市蜃楼'),auth);
     expect(response.status).toBe(200);expect(response.headers.get('Cache-Control')).toBe('private, no-store');
-    const results=await response.json();expect(results.items[0].platforms.sort()).toEqual(['bilibili','iqiyi','mgtv','qq','youku']);
-    const filtered=await (await get('search?q=test&platform=mgtv',auth)).json();expect(filtered.items[0].platforms).toEqual(['mgtv']);
-    const detail=await (await get('detail?id=360:2:show&platform=iqiyi',auth)).json();
-    expect(detail.episodes).toEqual([{platform:'iqiyi',url:links.qiyi,title:'第 25 集'}]);
+    const results=await response.json();expect(results.items[0]).toMatchObject({title:'海市蜃楼',year:'2025',type:'电视剧',episodeCount:24});
+    expect(results.items[1].type).toBe('电影');expect(results.warning).toContain('芒果');
+    const filtered=await (await get('search?q=test&platform=iqiyi',auth)).json();expect(filtered.items.every((item:any)=>item.platforms.join(',')==='iqiyi')).toBe(true);
+    const detail=await (await get('detail?id=iqiyi:6244560312265801&platform=iqiyi',auth)).json();
+    expect(detail.episodes).toHaveLength(24);expect(detail.episodes[0].url).toBe('https://www.iqiyi.com/v_27puk4z5uko.html');
     const {token}=await (await embedLogin(runtime)).json();expect((await get('search?q=test',{Authorization:'Bearer '+token})).status).toBe(200);
     expect((await get('search?q=test',{...auth,Origin:'https://evil.example'})).status).toBe(403);
     for(const request of upstream){
-      expect(['api.so.360kan.com','api.web.360kan.com']).toContain(new URL(request.url).hostname);
+      expect(['search.video.iqiyi.com','pcw-api.iqiyi.com','pbaccess.video.qq.com','api.bilibili.com','mobileso.bz.mgtv.com','so.youku.com']).toContain(new URL(request.url).hostname);
       expect(request.headers.get('Cookie')).toBeNull();expect(request.headers.get('Authorization')).toBeNull();
     }
   }finally{await runtime.dispose();}

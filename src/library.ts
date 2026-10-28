@@ -155,7 +155,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
       <div class="crayon-library-heading"><div><small class="crayon-library-eyebrow">映屿 / YINGYU</small><strong data-panel-title>发现你想看的</strong></div><button type="button" data-action="close" aria-label="关闭面板">关闭</button></div>
       <nav class="crayon-library-tabs" role="tablist" aria-label="播放器面板"><button type="button" role="tab" data-view="search" aria-selected="true">搜索</button><button type="button" role="tab" data-view="episodes" aria-selected="false">选集</button><button type="button" role="tab" data-view="routes" aria-selected="false">线路</button></nav>
       <form class="crayon-library-form"><input type="text" aria-label="影片名称或播放页地址" placeholder="搜索片名，或粘贴播放页网址" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" maxlength="8192"><button type="submit">搜索</button><button type="button" data-action="open-source">播放</button></form>
-      <div class="crayon-library-filters"><label>平台 <select data-field="platform" aria-label="视频平台"><option value="all">全部五平台</option></select></label><label>搜索 <select data-field="catalog" aria-label="搜索来源"><option value="auto">自动</option><option value="360">影视目录</option><option value="sogou">网页补充</option></select></label><label>线路 <select data-field="parser" aria-label="解析线路"></select></label><button type="button" data-action="history">历史记录</button><button type="button" data-action="share">播放链接</button></div>
+      <div class="crayon-library-filters"><label>平台 <select data-field="platform" aria-label="视频平台"><option value="all">全部五平台</option></select></label><label>线路 <select data-field="parser" aria-label="解析线路"></select></label><button type="button" data-action="history">历史记录</button><button type="button" data-action="share">播放链接</button></div>
       <div class="crayon-library-status" role="status" aria-live="polite"></div><input class="crayon-library-share" readonly aria-label="生成的播放链接" hidden>
       <div class="crayon-library-results"></div>
       <div class="crayon-library-episode-view" hidden></div><div class="crayon-library-route-view" hidden></div>
@@ -165,7 +165,6 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
   const mobile = attachMobileLibrary(art);
   const query = host.querySelector<HTMLInputElement>('.crayon-library-form input')!;
   const platform = host.querySelector<HTMLSelectElement>('[data-field=platform]')!;
-  const catalog = host.querySelector<HTMLSelectElement>('[data-field=catalog]')!;
   const route = host.querySelector<HTMLSelectElement>('[data-field=parser]')!;
   const status = host.querySelector<HTMLElement>('.crayon-library-status')!;
   const notice = host.querySelector<HTMLElement>('.crayon-library-notice')!;
@@ -247,7 +246,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     const data = await response.json().catch(() => null);
     if (!response.ok || !data) {
       const code = data?.error?.code;
-      throw new Error(code === 'RESOLVE_FAILED' ? '该线路未能解析这个播放页，请切换线路重试。' : code === 'UPSTREAM_TIMEOUT' ? '解析超时，请重试或切换线路。' : code === 'INVALID_REQUEST' ? '输入内容无效，请检查影片名称或具体播放页地址。' : body ? '解析服务暂时不可用，请重试或切换线路。' : '搜索来源暂时不可用，请重试或换一个搜索来源。');
+      throw new Error(code === 'RESOLVE_FAILED' ? '该线路未能解析这个播放页，请切换线路重试。' : code === 'UPSTREAM_TIMEOUT' ? '解析超时，请重试或切换线路。' : code === 'INVALID_REQUEST' ? '输入内容无效，请检查影片名称或具体播放页地址。' : body ? '解析服务暂时不可用，请重试或切换线路。' : '正版平台暂时无法查询，请稍后重试。');
     }
     return data;
   };
@@ -338,16 +337,18 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     for (const episode of current.detail.episodes) {
       const link = officialPage(episode.url);
       if (!link || link.platform !== current.platform) continue;
-      const choice = button(episode.title, () => {
+      const episodeLabel = /第\s*[\d一二三四五六七八九十百零]+\s*[集话期]/.exec(episode.title)?.[0] || episode.title;
+      const choice = button(episodeLabel, () => {
         collection = current;
         void play(link.url, selected === 'native' ? 'ql' : selected, current.item.title + ' · ' + episode.title).catch(error => message(error.message));
       });
+      choice.title = episode.title; choice.setAttribute('aria-label', episode.title);
       choice.setAttribute('aria-current', String(officialPage(source)?.url === link.url));
       episodes.append(choice);
     }
     const meta = document.createElement('div'); meta.className = 'crayon-library-collection-meta';
     meta.append(heading, platforms); target.append(meta, episodes);
-    message(episodes.childElementCount ? `${platformName(current.platform)} · ${episodes.childElementCount} 个可选播放页` : '这个平台暂未提供可用分集，请选择其他平台。');
+    message((episodes.childElementCount ? `${platformName(current.platform)} · ${episodes.childElementCount} 个可选播放页` : '这个平台暂未提供可用分集，请选择其他平台。') + (current.detail.warning ? ' · ' + current.detail.warning : ''));
     animateContent(target);
   }
   function renderEpisodes() {
@@ -389,7 +390,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
   const details = async (item: VideoItem, chosen = item.links[0]?.platform || '', target: HTMLElement = results, back = true) => {
     if (!detailEndpoint || !chosen) return;
     searchRequest?.abort(); const controller = new AbortController(); searchRequest = controller;
-    const version = ++searchVersion, timer = setTimeout(() => controller.abort(), 18000);
+    const version = ++searchVersion, timer = setTimeout(() => controller.abort(), 25000);
     target.replaceChildren(); message('正在读取分集…');
     try {
       const url = new URL(detailEndpoint, location.href); url.search = new URLSearchParams({ id: item.id, platform: chosen }).toString();
@@ -410,19 +411,27 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     const version = ++searchVersion, timer = setTimeout(() => controller.abort(), 30000);
     results.replaceChildren(); share.hidden = true; message('正在搜索五平台播放页…');
     try {
-      const url = new URL(searchEndpoint, location.href); url.search = new URLSearchParams({ q: term, platform: platform.value, source: catalog.value }).toString();
+      const url = new URL(searchEndpoint, location.href); url.search = new URLSearchParams({ q: term, platform: platform.value, source: 'official' }).toString();
       const data = await request(url.href, controller) as VideoSearchResult;
       if (disposed || version !== searchVersion) return;
       for (const item of data.items) {
         const row = button('', () => { void details(item); }); row.className = 'crayon-library-result';
         const title = document.createElement('strong'); title.textContent = item.title;
-        const meta = document.createElement('span'); meta.textContent = [item.year, item.platforms.map(platformName).join(' / ')].filter(Boolean).join(' · ');
+        const meta = document.createElement('span'); meta.textContent = [item.year, item.type, item.episodeCount ? `${item.episodeCount} 集/期` : '', item.platforms.map(platformName).join(' / ')].filter(Boolean).join(' · ');
         const description = document.createElement('span'); description.className = 'description'; description.textContent = item.description;
         row.append(title, meta, description); results.append(row);
       }
+      for (const provider of data.providers || []) {
+        if (provider.status === 'ok') continue;
+        // Derive navigation from the local platform list and query, never trust
+        // a returned URL as an arbitrary external navigation target.
+        const urls: Record<string, string> = { iqiyi: 'https://so.iqiyi.com/so/q_' + encodeURIComponent(term), qq: 'https://v.qq.com/x/search/?q=' + encodeURIComponent(term), youku: 'https://so.youku.com/search_video/q_' + encodeURIComponent(term), mgtv: 'https://so.mgtv.com/so?k=' + encodeURIComponent(term), bilibili: 'https://search.bilibili.com/all?keyword=' + encodeURIComponent(term) };
+        if (!urls[provider.platform]) continue;
+        const link = document.createElement('a'); link.href = urls[provider.platform]; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = `到${platformName(provider.platform)}官网搜索 ↗`; link.className = 'crayon-library-result'; results.append(link);
+      }
       animateContent(results);
-      message(`${data.source} · ${data.items.length} 条结果${data.warning ? ' · ' + data.warning : ''}${data.items.length ? '' : '；可调整名称或切换搜索来源。'}`);
-    } catch (error) { if (!disposed && version === searchVersion) message(controller.signal.aborted ? '搜索超时，请重试或切换搜索来源。' : (error as Error).message); }
+      message(`${data.source} · ${data.items.length} 条结果${data.warning ? ' · ' + data.warning : ''}${data.items.length || data.warning ? '' : '；可调整片名或选择其他平台。'}`);
+    } catch (error) { if (!disposed && version === searchVersion) message(controller.signal.aborted ? '搜索超时，请重试或选择单个平台。' : (error as Error).message); }
     finally { clearTimeout(timer); }
   };
   const onClick = (event: Event) => {
@@ -447,7 +456,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
   panel.addEventListener('keydown', event => {
     if (event.key === 'Escape') { event.preventDefault(); close(); }
     if (event.key === 'Tab') {
-      const items = Array.from(panel.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([hidden]),select')).filter(item => !item.closest('[hidden]'));
+      const items = Array.from(panel.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([hidden]),select,a[href]')).filter(item => !item.closest('[hidden]'));
       const first = items[0], last = items[items.length - 1];
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
@@ -459,7 +468,6 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     if (source) void play(source, selected).catch(error => { message(error.message); open(); });
   });
   platform.addEventListener('change', () => { if (query.value.trim()) void search(); });
-  catalog.addEventListener('change', () => { if (query.value.trim()) void search(); });
   const resize = () => { host.dataset.compact = String(root.getBoundingClientRect().height < 340); };
   const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(resize);
   observer?.observe(root); window.addEventListener('resize', resize); resize();

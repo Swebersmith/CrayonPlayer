@@ -72,7 +72,11 @@ export function initialParser(href: string, source: string): ParserId {
 export interface VideoItem {
   id: string; title: string; year: string; description: string; platforms: VideoPlatform[];
   links: { platform: VideoPlatform; url: string }[];
+  type?: string; episodeCount?: number; sourceUrl?: string;
 }
 export interface VideoEpisode { title: string; url: string; platform: VideoPlatform }
-export interface VideoSearchResult { items: VideoItem[]; source: string; warning?: string }
-export interface VideoDetailResult { title: string; episodes: VideoEpisode[]; platforms: VideoPlatform[]; total: number }
+export interface VideoSearchResult {
+  items: VideoItem[]; source: string; warning?: string;
+  providers?: { platform: VideoPlatform; name: string; status: 'ok' | 'partial' | 'unavailable'; count: number; searchUrl: string }[];
+}
+export interface VideoDetailResult { title: string; episodes: VideoEpisode[]; platforms: VideoPlatform[]; total: number; warning?: string }
