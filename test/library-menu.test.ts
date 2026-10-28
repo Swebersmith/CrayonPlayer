@@ -32,6 +32,23 @@ it('reveals a hidden menu on the first native tap even if the existing controls 
   art.emit('control',true);expect(bar.hidden).toBe(true);
 });
 
+it('keeps touch targets active between finger lift and the synthetic click',()=>{
+  menu.hide();wake.click();menu.show();
+  const leave=new Event('pointerleave');Object.defineProperty(leave,'pointerType',{value:'touch'});
+  art.template.$player.dispatchEvent(leave);art.emit('control',false);
+  expect(bar.hidden).toBe(false);expect(bar.hasAttribute('inert')).toBe(false);
+  const clicked=jest.fn();bar.querySelector('button')!.addEventListener('click',clicked);
+  bar.querySelector('button')!.click();expect(clicked).toHaveBeenCalledTimes(1);
+  jest.advanceTimersByTime(2500);expect(bar.hidden).toBe(true);
+});
+
+it('waits until a menu press is released before restarting the idle timer',()=>{
+  const press=new Event('pointerdown',{bubbles:true});Object.defineProperty(press,'pointerId',{value:7});
+  bar.querySelector('button')!.dispatchEvent(press);jest.advanceTimersByTime(5000);expect(bar.hidden).toBe(false);
+  const release=new Event('pointerup');Object.defineProperty(release,'pointerId',{value:7});window.dispatchEvent(release);
+  jest.advanceTimersByTime(2499);expect(bar.hidden).toBe(false);jest.advanceTimersByTime(1);expect(bar.hidden).toBe(true);
+});
+
 it('keeps keyboard navigation available and leaves an open search panel alone',()=>{
   menu.hide();wake.focus();expect(bar.hidden).toBe(false);
   art.emit('control',false);expect(bar.hidden).toBe(false);

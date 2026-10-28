@@ -81,7 +81,9 @@ try {
     const [reused]=await Promise.all([page.waitForResponse(response=>response.url().includes('/api/test/search')),page.locator('.crayon-library-history-term').click()]);
     if(new URL(reused.url()).searchParams.get('q')!=='流浪地球')throw new Error('History did not start the selected search');
     await page.locator('[data-action="close"]').click();
-    await page.locator('[data-action="fullscreen"]').click();
+    await page.locator('.crayon-library-panel').waitFor({state:'hidden'});
+    await wake.focus();
+    if(mobile) await page.locator('[data-action="fullscreen"]').tap(); else await page.locator('[data-action="fullscreen"]').click();
     if(!await page.evaluate(()=>document.fullscreenElement===window.testPlayer.template.$player))throw new Error('Fullscreen root changed');
     await page.evaluate(()=>document.exitFullscreen());
     await page.evaluate(()=>window.testPlayer.library.play('https://v.qq.com/x/cover/show/episode.html','tx'));

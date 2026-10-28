@@ -8,6 +8,7 @@ export function attachLibraryMenu(art: Artplayer, host: HTMLElement, bar: HTMLEl
   let touchUntil = 0, menuAtTouch = false;
   let motion: Animation | undefined;
   let hiding = false;
+  let pressed: number | undefined;
   const animate = typeof bar.animate === 'function' && !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
   const hide = () => {
     clearTimeout(timer);
@@ -41,8 +42,20 @@ export function attachLibraryMenu(art: Artplayer, host: HTMLElement, bar: HTMLEl
     if ((event as PointerEvent).pointerType === 'touch') return;
     show();
   };
-  const leave = () => { if (!(keyboard && (bar.contains(document.activeElement) || document.activeElement === wake))) hide(); };
-  const pointer = () => { keyboard = false; };
+  const leave = (event?: Event) => {
+    // Touch pointers leave on every finger lift, before the synthetic click.
+    if ((event as PointerEvent | undefined)?.pointerType === 'touch') return;
+    if (!(keyboard && (bar.contains(document.activeElement) || document.activeElement === wake))) hide();
+  };
+  const pointer = (event: PointerEvent) => {
+    keyboard = false;
+    if (!bar.hidden && bar.contains(event.target as Node)) { pressed = event.pointerId; clearTimeout(timer); }
+  };
+  const release = (event: PointerEvent) => {
+    if (pressed === undefined || event.pointerId !== pressed) return;
+    pressed = undefined;
+    if (!bar.hidden) show();
+  };
   const touch = (event: TouchEvent) => {
     if (event.target !== art.video) return;
     touchUntil = Date.now() + 1000;
@@ -52,7 +65,9 @@ export function attachLibraryMenu(art: Artplayer, host: HTMLElement, bar: HTMLEl
     if (touchUntil > Date.now()) {
       touchUntil = 0;
       if (menuAtTouch) hide(); else show();
-    } else if (visible) show(); else leave();
+    } else if (visible) show();
+    // The toolbar has its own idle timer. A native controls timeout must not
+    // swallow an unrelated menu tap that happened just before it.
   };
   const focus = (event: FocusEvent) => {
     if (event.target === wake) show(true);
@@ -80,6 +95,8 @@ export function attachLibraryMenu(art: Artplayer, host: HTMLElement, bar: HTMLEl
   root.addEventListener('pointerenter', move);
   root.addEventListener('pointerleave', leave);
   root.addEventListener('pointerdown', pointer, true);
+  window.addEventListener('pointerup', release, true);
+  window.addEventListener('pointercancel', release, true);
   root.addEventListener('keydown', key, true);
   window.addEventListener('touchstart', touch, { capture: true, passive: true });
   host.addEventListener('focusin', focus);
@@ -96,6 +113,8 @@ export function attachLibraryMenu(art: Artplayer, host: HTMLElement, bar: HTMLEl
       root.removeEventListener('pointerenter', move);
       root.removeEventListener('pointerleave', leave);
       root.removeEventListener('pointerdown', pointer, true);
+      window.removeEventListener('pointerup', release, true);
+      window.removeEventListener('pointercancel', release, true);
       root.removeEventListener('keydown', key, true);
       window.removeEventListener('touchstart', touch, true);
       host.removeEventListener('focusin', focus);

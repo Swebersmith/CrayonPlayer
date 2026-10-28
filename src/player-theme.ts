@@ -58,6 +58,7 @@ export function attachPlayerTheme(art: Artplayer) {
 [data-crayon-theme] [data-crayon-cast-panel] button{border:1px solid var(--crayon-line)!important;border-radius:11px!important;background:#ffffff06!important;color:var(--crayon-ink)!important}
 [data-crayon-theme] [data-crayon-cast-panel] button:hover{background:#ffffff12!important;border-color:#a1e6d04d!important}
 [data-crayon-theme] input[type=range]{accent-color:var(--crayon-accent)}
+@media(pointer:coarse){[data-crayon-theme] button:active,[data-crayon-theme] [role=button]:active,[data-crayon-theme] .art-control:active{scale:1;background-color:#a1e6d018}.crayon-button-trail{display:none}}
 .crayon-button-trail{position:absolute;top:0;left:0;z-index:210;border:1px solid #a1e6d04a;border-radius:11px;background:#a1e6d005;box-shadow:0 0 18px #a1e6d00b;pointer-events:none;opacity:0;transition:transform .28s var(--crayon-ease),width .28s var(--crayon-ease),height .28s var(--crayon-ease),opacity .16s ease}
 .crayon-morph-surface{position:absolute;z-index:149;pointer-events:none;background:var(--crayon-glass);border:1px solid var(--crayon-line);box-shadow:0 24px 80px #0009;backdrop-filter:blur(24px)}
 @media(prefers-reduced-motion:reduce){[data-crayon-theme] *,[data-crayon-theme] *::before,[data-crayon-theme] *::after{transition:none!important;animation:none!important}}
@@ -80,7 +81,9 @@ export function attachPlayerTheme(art: Artplayer) {
   const press = (event: Event) => {
     const button = target(event);
     if (!button?.animate || reduced() || button.matches(':disabled') || button.classList.contains('crayon-library-wake')) return;
-    button.animate([{scale:'.96'},{scale:'1'}],{duration:230,easing:timing.easing});
+    button.animate((event as PointerEvent).pointerType === 'touch'
+      ? [{filter:'brightness(1.2)'},{filter:'brightness(1)'}]
+      : [{scale:'.96'},{scale:'1'}],{duration:230,easing:timing.easing});
   };
   const observer = typeof MutationObserver === 'undefined' ? undefined : new MutationObserver(() => { if(active && (!root.contains(active) || active.closest('[hidden]'))) hide(); });
   observer?.observe(root,{subtree:true,attributes:true,attributeFilter:['hidden','class'],childList:true});

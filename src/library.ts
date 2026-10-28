@@ -4,6 +4,7 @@ import { toggleCrayonFullscreen } from './fullscreen';
 import { attachLibraryMenu } from './library-menu';
 import { animateContent, cancelPanelMotion, morphPanel } from './player-theme';
 import { readSearchHistory, writeSearchHistory } from './search-history';
+import { attachMobileLibrary } from './mobile-library';
 import { httpSource, officialPage, parserPage, parserRoute, parserRoutes, playbackSource, videoPlatforms, ParserId, VideoItem, VideoEpisode, VideoSearchResult, VideoDetailResult } from './library-sources';
 
 export interface VideoLibraryOptions {
@@ -108,6 +109,35 @@ const css = `
 [data-crayon-library][data-compact=true] .crayon-library-episodes{grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:5px}
 [data-crayon-library][data-compact=true] .crayon-library-episodes button{min-height:30px;padding:4px 6px;font-size:11px}
 @media(prefers-reduced-motion:reduce){[data-crayon-library] *{scroll-behavior:auto!important}}
+@media(pointer:coarse){
+  .crayon-library-wake{width:min(210px,70%);height:44px}
+  .crayon-library-wake[aria-expanded=true]{pointer-events:none}
+  [data-crayon-library] .crayon-library-bar{top:calc(8px + var(--crayon-safe-top,0px));max-width:calc(100% - 16px);gap:0}
+  [data-crayon-library] .crayon-library-bar button{min-width:48px;min-height:44px;padding:8px 9px}
+  [data-crayon-library] button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+}
+.art-video-player[data-crayon-library-mobile=true]{position:fixed!important;inset:auto!important;top:var(--crayon-mobile-top)!important;left:var(--crayon-mobile-left)!important;width:var(--crayon-mobile-width)!important;height:var(--crayon-mobile-height)!important;max-width:none!important;max-height:none!important;transform:none!important;z-index:10001!important;border-radius:0}
+[data-crayon-library-mobile=true] .crayon-library-panel{inset:calc(8px + env(safe-area-inset-top,0px)) calc(8px + env(safe-area-inset-right,0px)) calc(8px + env(safe-area-inset-bottom,0px)) calc(8px + env(safe-area-inset-left,0px));padding:12px;max-width:none;display:block;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;scroll-padding:64px 0 16px;border-radius:16px}
+.art-video-player[data-crayon-library-mobile=true] .crayon-library-panel[data-view] .crayon-library-heading{position:sticky;top:-12px;right:auto;z-index:3;background:#18212c;padding:8px 0;margin:0 0 8px;min-height:52px}
+.art-video-player[data-crayon-library-mobile=true] .crayon-library-panel[data-view] .crayon-library-heading>div{display:block}
+[data-crayon-library-mobile=true] .crayon-library-heading strong{font-size:16px}
+[data-crayon-library-mobile=true] .crayon-library-panel[data-view] button{min-height:44px;font-size:14px;padding:9px 12px}
+[data-crayon-library-mobile=true] .crayon-library-panel input,[data-crayon-library-mobile=true] .crayon-library-panel select{font-size:16px;min-height:44px}
+.art-video-player[data-crayon-library-mobile=true] .crayon-library-panel[data-view] .crayon-library-tabs{padding:0 0 8px;margin-bottom:12px}
+[data-crayon-library-mobile=true] .crayon-library-form{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px}
+[data-crayon-library-mobile=true] .crayon-library-panel .crayon-library-filters{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+[data-crayon-library-mobile=true] .crayon-library-panel .crayon-library-filters label{display:flex;flex-direction:column;align-items:stretch;font-size:11px;gap:4px;color:#9daebf}
+[data-crayon-library-mobile=true] .crayon-library-filters select{width:100%;max-width:none;padding:8px}
+[data-crayon-library-mobile=true] .crayon-library-panel [data-action=share]{display:none}
+[data-crayon-library-mobile=true] .crayon-library-status{font-size:12px;line-height:1.6;margin:12px 0}
+[data-crayon-library-mobile=true] .crayon-library-results,[data-crayon-library-mobile=true] .crayon-library-episode-view,[data-crayon-library-mobile=true] .crayon-library-route-view{overflow:visible;min-height:0;margin-top:12px;padding:2px 0 12px}
+[data-crayon-library-mobile=true] .crayon-library-history-list{grid-template-columns:minmax(0,1fr)}
+[data-crayon-library-mobile=true] .crayon-library-panel .crayon-library-history-delete{min-width:44px;height:44px}
+[data-crayon-library-mobile=true] .crayon-library-panel .crayon-library-result{padding:12px!important}
+[data-crayon-library-mobile=true] .crayon-library-result strong{font-size:15px}
+[data-crayon-library-mobile=true] .crayon-library-result .description{display:block}
+[data-crayon-library-mobile=true] .crayon-library-episodes{grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px}
+[data-crayon-library-mobile=true] .crayon-library-route-view{grid-template-columns:minmax(0,1fr)}
 `;
 const platformName = (id: string) => videoPlatforms.find(item => item.id === id)?.name || id;
 const endpoint = (value: string | false | undefined, fallback: string) => value === false ? undefined : value || fallback;
@@ -124,7 +154,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     <section class="crayon-library-panel" role="dialog" aria-label="搜索与播放" hidden>
       <div class="crayon-library-heading"><div><small class="crayon-library-eyebrow">CRAYON / PLAYER</small><strong data-panel-title>发现你想看的</strong></div><button type="button" data-action="close" aria-label="关闭面板">关闭</button></div>
       <nav class="crayon-library-tabs" role="tablist" aria-label="播放器面板"><button type="button" role="tab" data-view="search" aria-selected="true">搜索</button><button type="button" role="tab" data-view="episodes" aria-selected="false">选集</button><button type="button" role="tab" data-view="routes" aria-selected="false">线路</button></nav>
-      <form class="crayon-library-form"><input type="text" aria-label="影片名称或播放页地址" placeholder="搜索片名，或粘贴播放页网址" autocomplete="off" maxlength="8192"><button type="submit">搜索</button><button type="button" data-action="open-source">播放</button></form>
+      <form class="crayon-library-form"><input type="text" aria-label="影片名称或播放页地址" placeholder="搜索片名，或粘贴播放页网址" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" maxlength="8192"><button type="submit">搜索</button><button type="button" data-action="open-source">播放</button></form>
       <div class="crayon-library-filters"><label>平台 <select data-field="platform" aria-label="视频平台"><option value="all">全部五平台</option></select></label><label>搜索 <select data-field="catalog" aria-label="搜索来源"><option value="auto">自动</option><option value="360">影视目录</option><option value="sogou">网页补充</option></select></label><label>线路 <select data-field="parser" aria-label="解析线路"></select></label><button type="button" data-action="history">历史记录</button><button type="button" data-action="share">播放链接</button></div>
       <div class="crayon-library-status" role="status" aria-live="polite"></div><input class="crayon-library-share" readonly aria-label="生成的播放链接" hidden>
       <div class="crayon-library-results"></div>
@@ -132,6 +162,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     </section>`;
   host.prepend(style); root.append(host);
   const panel = host.querySelector<HTMLElement>('.crayon-library-panel')!;
+  const mobile = attachMobileLibrary(art);
   const query = host.querySelector<HTMLInputElement>('.crayon-library-form input')!;
   const platform = host.querySelector<HTMLSelectElement>('[data-field=platform]')!;
   const catalog = host.querySelector<HTMLSelectElement>('[data-field=catalog]')!;
@@ -188,7 +219,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     void morphPanel(root, panel, panelOrigin, false).then(done => {
       if (!done || disposed || version !== panelVersion) return;
       panelClosing = false;
-      wake.hidden = false; menu.show(); restoreFocus?.focus();
+      mobile.close(); wake.hidden = false; menu.show(); restoreFocus?.focus({ preventScroll: true });
     });
   };
   const openView = (view: 'search' | 'episodes' | 'routes', trigger?: HTMLElement) => {
@@ -200,10 +231,11 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
       restoreFocus = document.activeElement as HTMLElement | null;
       panelOrigin = (trigger || host.querySelector<HTMLElement>(`[data-action=${view}]`))?.getBoundingClientRect();
     }
-    setView(view); wake.hidden = true; menu.hide(); notice.hidden = true;
+    mobile.open(); setView(view); panel.scrollTop = 0; wake.hidden = true; menu.hide(); notice.hidden = true;
     if (opening || reopening) void morphPanel(root, panel, panelOrigin, true);
     else animateContent(view === 'episodes' ? episodeView : view === 'routes' ? routeView : results);
-    if (view === 'search') query.focus(); else host.querySelector<HTMLButtonElement>(`.crayon-library-tabs [data-view=${view}]`)?.focus();
+    if (view === 'search' && !mobile.active()) query.focus({ preventScroll: true });
+    else host.querySelector<HTMLButtonElement>(`.crayon-library-tabs [data-view=${view}]`)?.focus({ preventScroll: true });
   };
   const open = () => openView('search');
   const removeFrame = () => { clearTimeout(frameTimer); frame?.remove(); frame = undefined; delete root.dataset.crayonLibraryExternal; };
@@ -372,6 +404,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     if (/^https?:\/\//i.test(term)) { await play(term, selected === 'native' && officialPage(term) ? 'ql' : selected); return; }
     if (!term || term.length > 80) { message('请输入 1–80 字的影片名称。'); return; }
     if (!searchEndpoint) { message('当前站点未启用搜索。可粘贴播放页，或选择 M1907 按名称播放。'); return; }
+    if (mobile.active()) query.blur();
     history = writeSearchHistory([term, ...history]); showingHistory = false;
     searchRequest?.abort(); const controller = new AbortController(); searchRequest = controller;
     const version = ++searchVersion, timer = setTimeout(() => controller.abort(), 30000);
@@ -430,7 +463,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
   const resize = () => { host.dataset.compact = String(root.getBoundingClientRect().height < 340); };
   const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(resize);
   observer?.observe(root); window.addEventListener('resize', resize); resize();
-  const destroy = () => { if (disposed) return; disposed = true; panelVersion++; cancelPanelMotion(panel); playVersion++; searchVersion++; menu.destroy(); loadRequest?.abort(); searchRequest?.abort(); observer?.disconnect(); window.removeEventListener('resize', resize); removeFrame(); host.remove(); };
+  const destroy = () => { if (disposed) return; disposed = true; panelVersion++; cancelPanelMotion(panel); mobile.destroy(); playVersion++; searchVersion++; menu.destroy(); loadRequest?.abort(); searchRequest?.abort(); observer?.disconnect(); window.removeEventListener('resize', resize); removeFrame(); host.remove(); };
   art.on('destroy', destroy); syncRoute();
   if (source && (selected !== 'native' || source !== playback.initialUrl)) void play(source, selected).catch(error => message(error.message, true));
   return { open, openEpisodes: () => openView('episodes'), play, source: () => source, parser: () => selected, destroy };

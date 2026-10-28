@@ -8,6 +8,7 @@ import { miniProgressSetting } from './progress';
 import { networkSettings } from './network-settings';
 import { settingSwitchButtons } from './setting-switch';
 import { responsiveSettings } from './responsive';
+import { crayonAutoOrientation } from './orientation';
 
 export type CrayonPlayerCoreOptions = ConstructorParameters<typeof Artplayer>[0];
 
@@ -23,6 +24,7 @@ export function createCrayonPlayerCore(
   Artplayer.DBCLICK_FULLSCREEN = false;
   const art = new Artplayer({
     ...options,
+    autoOrientation: false, // Crayon owns rotation so denied device locks are handled.
     playsInline: true,
     fullscreen: options.fullscreen ?? true,
     fullscreenWeb: options.fullscreenWeb ?? true,
@@ -31,7 +33,7 @@ export function createCrayonPlayerCore(
     fastForward: false,
     miniProgressBar: false,
     settings: settingSwitchButtons([volumeSetting(), miniProgressSetting(options.miniProgressBar), ...networkSettings(enhancements.network), ...responsiveSettings({ ...options, fullscreenWeb: options.fullscreenWeb ?? true }), ...(options.settings || [])]),
-    plugins: [...(options.plugins || []), crayonPlayerPlugin(enhancements)],
+    plugins: [...(options.plugins || []), ...(options.autoOrientation ? [crayonAutoOrientation] : []), crayonPlayerPlugin(enhancements)],
   });
   if (art.video) configureInlineVideo(art.video);
   if (art.template?.$player) attachFullscreen(art);
