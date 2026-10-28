@@ -3,6 +3,7 @@ import type { MediaPreparerAuth } from './media-client';
 import { toggleCrayonFullscreen } from './fullscreen';
 import { attachLibraryMenu } from './library-menu';
 import { animateContent, cancelPanelMotion, morphPanel } from './player-theme';
+import { readSearchHistory, writeSearchHistory } from './search-history';
 import { httpSource, officialPage, parserPage, parserRoute, parserRoutes, playbackSource, videoPlatforms, ParserId, VideoItem, VideoEpisode, VideoSearchResult, VideoDetailResult } from './library-sources';
 
 export interface VideoLibraryOptions {
@@ -49,10 +50,18 @@ const css = `
 .crayon-library-tabs [aria-selected=true]{background:#a1e6d010;border-color:#a1e6d020;color:#bdeedb}
 .crayon-library-form{display:flex;gap:7px}.crayon-library-form input{flex:1;width:100%;font-size:16px;padding:8px 12px}.crayon-library-form [type=submit]{background:#a1e6d0;color:#10251f;border-color:transparent;font-weight:600}.crayon-library-form [type=submit]:hover{background:#b6eedc;color:#10251f}
 .crayon-library-filters{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}.crayon-library-filters label{display:flex;gap:7px;align-items:center;font-size:11px;color:#8496ac}.crayon-library-filters select{padding:5px 8px;max-width:180px;font-size:12px;color:#d6e0eb}.crayon-library-filters [data-action=share]{padding:5px 9px;font-size:11px}
+.crayon-library-filters [data-action=history]{padding:5px 9px;font-size:11px}
 .crayon-library-status{margin:9px 0;color:#8fa8b5;min-height:18px;overflow-wrap:anywhere;font-size:11px}
 .crayon-library-status:empty{display:none}
 .crayon-library-results,.crayon-library-episode-view,.crayon-library-route-view{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#ffffff24 transparent;padding:2px 2px 6px;touch-action:pan-y}
 .crayon-library-results{display:flex;flex-direction:column;gap:8px}
+.crayon-library-history-heading{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 2px 3px}.crayon-library-history-heading strong{font-size:13px;font-weight:500}.crayon-library-history-heading small{font-size:10px;color:#8395aa}
+.crayon-library-history-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+.crayon-library-history-item{display:flex;align-items:center;min-width:0;border:1px solid #ffffff10;border-radius:12px;background:#ffffff03;padding:3px}
+.crayon-library-history-item button{background:transparent;border-color:transparent}
+.crayon-library-history-term{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;padding:7px 10px!important}
+.crayon-library-history-delete{flex:none;width:34px;height:34px;display:grid;place-items:center;padding:7px!important;color:#8fa1b6!important}.crayon-library-history-delete:hover{color:#f4c9c9!important;background:#ec9a9a12!important}.crayon-library-history-delete svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round}
+.crayon-library-history-empty{margin:8px 2px;color:#8395aa;font-size:12px;line-height:1.7}
 .crayon-library-result{text-align:left;white-space:normal!important;display:flex;flex-direction:column;gap:4px;padding:12px 14px!important;background:#ffffff03!important}.crayon-library-result:hover{background:#ffffff08!important}.crayon-library-result strong{font-size:14px;font-weight:550}.crayon-library-result span{color:#8395aa;font-size:11px;line-height:1.5}
 .crayon-library-collection-title{display:block;font-size:16px;margin:3px 0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .crayon-library-episodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:7px;align-content:start}
@@ -76,6 +85,9 @@ const css = `
 [data-crayon-library][data-compact=true] .crayon-library-heading [data-action=close]{padding:3px 7px;font-size:11px}
 [data-crayon-library][data-compact=true] .crayon-library-tabs{margin-bottom:5px;padding-bottom:4px;gap:4px}
 [data-crayon-library][data-compact=true] .crayon-library-tabs button{font-size:11px;padding:2px 10px}
+[data-crayon-library][data-compact=true] .crayon-library-panel[data-view=search] .crayon-library-heading{position:absolute;top:8px;right:8px;margin:0}
+[data-crayon-library][data-compact=true] .crayon-library-panel[data-view=search] .crayon-library-heading>div{display:none}
+[data-crayon-library][data-compact=true] .crayon-library-panel[data-view=search] .crayon-library-tabs{padding-right:48px;min-height:26px}
 [data-crayon-library][data-compact=true] .crayon-library-form button,[data-crayon-library][data-compact=true] .crayon-library-form input{padding:4px 7px}
 [data-crayon-library][data-compact=true] .crayon-library-filters{margin-top:5px;flex-wrap:nowrap;gap:5px}
 [data-crayon-library][data-compact=true] .crayon-library-filters label{font-size:0;gap:0;flex:1;min-width:0}
@@ -84,6 +96,9 @@ const css = `
 [data-crayon-library][data-compact=true] .crayon-library-status{margin:4px 0;font-size:10px;min-height:15px}
 [data-crayon-library][data-compact=true] .crayon-library-result{padding:6px 9px!important;gap:2px}
 [data-crayon-library][data-compact=true] .crayon-library-result .description{display:none}
+[data-crayon-library][data-compact=true] .crayon-library-history-heading{padding-top:4px}
+[data-crayon-library][data-compact=true] .crayon-library-history-list{gap:5px}
+[data-crayon-library][data-compact=true] .crayon-library-history-term{padding:5px 7px!important;font-size:12px}
 [data-crayon-library][data-compact=true] .crayon-library-collection-title{font-size:13px;margin:2px 0 5px}
 [data-crayon-library][data-compact=true] .crayon-library-platforms{margin:4px 0 7px}
 [data-crayon-library][data-compact=true] .crayon-library-collection-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}
@@ -110,7 +125,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
       <div class="crayon-library-heading"><div><small class="crayon-library-eyebrow">CRAYON / PLAYER</small><strong data-panel-title>发现你想看的</strong></div><button type="button" data-action="close" aria-label="关闭面板">关闭</button></div>
       <nav class="crayon-library-tabs" role="tablist" aria-label="播放器面板"><button type="button" role="tab" data-view="search" aria-selected="true">搜索</button><button type="button" role="tab" data-view="episodes" aria-selected="false">选集</button><button type="button" role="tab" data-view="routes" aria-selected="false">线路</button></nav>
       <form class="crayon-library-form"><input type="text" aria-label="影片名称或播放页地址" placeholder="搜索片名，或粘贴播放页网址" autocomplete="off" maxlength="8192"><button type="submit">搜索</button><button type="button" data-action="open-source">播放</button></form>
-      <div class="crayon-library-filters"><label>平台 <select data-field="platform" aria-label="视频平台"><option value="all">全部五平台</option></select></label><label>搜索 <select data-field="catalog" aria-label="搜索来源"><option value="auto">自动</option><option value="360">影视目录</option><option value="sogou">网页补充</option></select></label><label>线路 <select data-field="parser" aria-label="解析线路"></select></label><button type="button" data-action="share">播放链接</button></div>
+      <div class="crayon-library-filters"><label>平台 <select data-field="platform" aria-label="视频平台"><option value="all">全部五平台</option></select></label><label>搜索 <select data-field="catalog" aria-label="搜索来源"><option value="auto">自动</option><option value="360">影视目录</option><option value="sogou">网页补充</option></select></label><label>线路 <select data-field="parser" aria-label="解析线路"></select></label><button type="button" data-action="history">历史记录</button><button type="button" data-action="share">播放链接</button></div>
       <div class="crayon-library-status" role="status" aria-live="polite"></div><input class="crayon-library-share" readonly aria-label="生成的播放链接" hidden>
       <div class="crayon-library-results"></div>
       <div class="crayon-library-episode-view" hidden></div><div class="crayon-library-route-view" hidden></div>
@@ -136,6 +151,8 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
   let selected: ParserId = options.parser || (officialPage(source) ? 'ql' : 'native');
   route.value = selected;
   let sourceTitle = '';
+  let history = readSearchHistory();
+  let showingHistory = true;
   type Collection = { item: VideoItem; platform: string; detail: VideoDetailResult };
   let collection: Collection | undefined;
   let panelOrigin: DOMRect | undefined;
@@ -159,6 +176,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     sourceForm.hidden = filters.hidden = results.hidden = view !== 'search';
     episodeView.hidden = view !== 'episodes'; routeView.hidden = view !== 'routes'; share.hidden = true;
     host.querySelectorAll<HTMLButtonElement>('.crayon-library-tabs [data-view]').forEach(button => button.setAttribute('aria-selected', String(button.dataset.view === view)));
+    if (view === 'search' && showingHistory) { renderHistory(); message(''); }
     if (view === 'episodes') renderEpisodes();
     if (view === 'routes') renderRoutes();
   };
@@ -239,6 +257,39 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     root.append(currentFrame); message('正在加载 ' + parserRoute(parser).name + '…', true);
   };
   const button = (text: string, click: () => void) => { const item = document.createElement('button'); item.type = 'button'; item.textContent = text; item.addEventListener('click', click); return item; };
+  function renderHistory(focusIndex?: number) {
+    results.replaceChildren();
+    const heading = document.createElement('div'); heading.className = 'crayon-library-history-heading';
+    const title = document.createElement('strong'); title.textContent = '搜索历史';
+    const note = document.createElement('small'); note.textContent = '仅保存在此浏览器';
+    heading.append(title, note); results.append(heading);
+    const list = document.createElement('div'); list.className = 'crayon-library-history-list';
+    for (const [index, term] of history.entries()) {
+      const row = document.createElement('div'); row.className = 'crayon-library-history-item';
+      const use = button(term, () => { query.value = term; void search().catch(error => message(error.message)); });
+      use.className = 'crayon-library-history-term'; use.title = term; use.setAttribute('aria-label', '搜索：' + term);
+      const remove = button('', () => {
+        history = writeSearchHistory(history.filter(value => value !== term));
+        renderHistory(index);
+      });
+      remove.className = 'crayon-library-history-delete'; remove.title = '删除这条记录'; remove.setAttribute('aria-label', '删除搜索记录：' + term);
+      remove.innerHTML = '<svg aria-hidden="true" viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8"/></svg>';
+      row.append(use, remove); list.append(row);
+    }
+    if (history.length) results.append(list);
+    else {
+      const empty = document.createElement('p'); empty.className = 'crayon-library-history-empty';
+      empty.textContent = '暂无搜索记录。搜索过的片名会显示在这里，点击即可再次搜索。'; results.append(empty);
+    }
+    if (focusIndex !== undefined) {
+      const choices = list.querySelectorAll<HTMLButtonElement>('.crayon-library-history-delete');
+      (choices[Math.min(focusIndex, choices.length - 1)] || query).focus();
+    }
+  }
+  function showHistory() {
+    searchVersion++; searchRequest?.abort(); searchRequest = undefined;
+    showingHistory = true; share.hidden = true; message(''); renderHistory(); animateContent(results);
+  }
   function renderCollection(current: Collection, target: HTMLElement, back = false) {
     target.replaceChildren();
     if (back) target.append(button('← 返回搜索结果', () => { void search(); }));
@@ -321,6 +372,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     if (/^https?:\/\//i.test(term)) { await play(term, selected === 'native' && officialPage(term) ? 'ql' : selected); return; }
     if (!term || term.length > 80) { message('请输入 1–80 字的影片名称。'); return; }
     if (!searchEndpoint) { message('当前站点未启用搜索。可粘贴播放页，或选择 M1907 按名称播放。'); return; }
+    history = writeSearchHistory([term, ...history]); showingHistory = false;
     searchRequest?.abort(); const controller = new AbortController(); searchRequest = controller;
     const version = ++searchVersion, timer = setTimeout(() => controller.abort(), 30000);
     results.replaceChildren(); share.hidden = true; message('正在搜索五平台播放页…');
@@ -348,6 +400,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     if (action === 'menu') menu.show();
     if (action === 'search' || action === 'episodes' || action === 'routes') openView(action, trigger || undefined);
     if (action === 'close') close();
+    if (action === 'history') showHistory();
     if (action === 'fullscreen') void toggleCrayonFullscreen(art);
     if (action === 'retry') void play(source).catch(error => message(error.message, true));
     if (action === 'open-source') void play(query.value, selected).catch(error => message(error.message));

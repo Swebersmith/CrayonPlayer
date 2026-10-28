@@ -4,6 +4,7 @@ const originalFetch = global.fetch;
 let art: ReturnType<typeof fakeArt>, library: VideoLibraryController;
 let suspend: jest.Mock, media: jest.Mock;
 beforeEach(()=>{
+  localStorage.clear();
   art=fakeArt(); suspend=jest.fn(); media=jest.fn();
   global.fetch=jest.fn() as jest.Mock;
 });
@@ -12,6 +13,57 @@ const response=(data:unknown,status=200)=>({ok:status===200,status,json:async()=
 const source='https://www.iqiyi.com/v_19rrjaail0.html';
 const item={id:'360:2:show',title:'<img src=x onerror=alert(1)>西游记',year:'1986',description:'电视剧',platforms:['iqiyi'],links:[{platform:'iqiyi',url:source}]};
 const flush=()=>new Promise(resolve=>setTimeout(resolve,0));
+const submit = async (name: string) => {
+  (art.template.$player.querySelector('.crayon-library-form input') as HTMLInputElement).value = name;
+  art.template.$player.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+  await flush();
+};
+const historyButton = () => (art.template.$player.querySelector('[data-action=history]') as HTMLButtonElement).click();
+const historyTerms = () => Array.from(art.template.$player.querySelectorAll('.crayon-library-history-term'), entry => entry.textContent);
+
+it('persists recent searches, deduplicates, reuses a term and removes only the chosen record',async()=>{
+  global.fetch=jest.fn(async()=>response({items:[],source:'目录'})) as jest.Mock;
+  const mount=()=>attachVideoLibrary(art,{}, {suspend,media,initialUrl:''});
+  library=mount();library.open();
+  await submit('西游记');await submit('流浪地球');await submit('  西游记  ');
+  historyButton();expect(historyTerms()).toEqual(['西游记','流浪地球']);
+  const calls=(global.fetch as jest.Mock).mock.calls.length;
+  (art.template.$player.querySelector('.crayon-library-history-delete') as HTMLButtonElement).click();
+  expect(historyTerms()).toEqual(['流浪地球']);expect((global.fetch as jest.Mock).mock.calls).toHaveLength(calls);
+  library.destroy();library=mount();library.open();
+  expect(historyTerms()).toEqual(['流浪地球']);
+  (art.template.$player.querySelector('.crayon-library-history-term') as HTMLButtonElement).click();await flush();
+  expect(new URL((global.fetch as jest.Mock).mock.calls[calls][0]).searchParams.get('q')).toBe('流浪地球');
+  historyButton();(art.template.$player.querySelector('.crayon-library-history-delete') as HTMLButtonElement).click();
+  expect(art.template.$player.querySelector('.crayon-library-history-empty')!.textContent).toContain('暂无搜索记录');
+  library.destroy();library=mount();library.open();expect(historyTerms()).toEqual([]);
+});
+
+it('bounds history and renders stored names safely without keeping playback URLs or invalid terms',async()=>{
+  const key='crayon-player:search-history:v1';
+  const name='<img src=x onerror=alert(1)>';
+  localStorage.setItem(key,JSON.stringify([null,42,'',name,'https://media.example/private?token=secret',...Array.from({length:25},(_,i)=>'影片'+i)]));
+  global.fetch=jest.fn(async()=>response({items:[],source:'目录'})) as jest.Mock;
+  library=attachVideoLibrary(art,{}, {suspend,media,initialUrl:''});library.open();
+  expect(historyTerms()).toHaveLength(20);expect(historyTerms()[0]).toBe(name);
+  expect(art.template.$player.querySelector('.crayon-library-history-list img')).toBeNull();
+  await submit('');await submit('长'.repeat(81));await submit('https://media.example/private?token=secret');
+  historyButton();expect(historyTerms()).toHaveLength(20);expect(historyTerms().some(value=>value?.includes('secret'))).toBe(false);
+});
+
+it('keeps history usable when storage writes fail and ignores a late search after opening history',async()=>{
+  const write=jest.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw new Error('Storage blocked');});
+  let finish:(value:unknown)=>void=()=>{};
+  global.fetch=jest.fn(()=>new Promise(resolve=>{finish=resolve;})) as jest.Mock;
+  try {
+    library=attachVideoLibrary(art,{}, {suspend,media,initialUrl:''});library.open();
+    await submit('西游记');historyButton();expect(historyTerms()).toEqual(['西游记']);
+    finish(response({items:[item],source:'目录'}));await flush();
+    expect(historyTerms()).toEqual(['西游记']);expect(art.template.$player.querySelector('.crayon-library-result')).toBeNull();
+    (art.template.$player.querySelector('.crayon-library-history-delete') as HTMLButtonElement).click();
+    expect(historyTerms()).toEqual([]);
+  } finally {write.mockRestore();}
+});
 
 it('keeps search, episodes and selected-page playback inside the actual player root',async()=>{
   global.fetch=jest.fn(async(input:string)=>response(input.includes('/search')?{items:[item],source:'360影视'}:input.includes('/detail')?{title:'西游记',episodes:[{title:'第 25 集',url:source,platform:'iqiyi'}],platforms:['iqiyi'],total:25}:{url:'https://media.example/resolved.m3u8',type:'m3u8'})) as jest.Mock;

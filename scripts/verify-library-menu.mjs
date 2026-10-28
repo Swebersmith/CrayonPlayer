@@ -4,13 +4,14 @@ import { chromium } from 'playwright-core';
 
 const bundle = await readFile('dist/crayon-player.iife.js');
 const html = `<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#101714;display:grid;place-items:center;min-height:100vh}#player{width:min(960px,100vw);height:min(540px,56.25vw)}</style><div id="player"></div><script src="/player.js"></script><script>
-const p=CrayonPlayer.createCrayonPlayer({container:'#player',url:'',enhancements:{casting:{chromecast:false}},library:{searchEndpoint:false,detailEndpoint:false,resolveEndpoint:false,episodes:Array.from({length:24},(_,i)=>({title:'第 '+(i+1)+' 集',url:'https://www.iqiyi.com/v_episode'+(i+1)+'.html',platform:'iqiyi'}))}});
+const p=CrayonPlayer.createCrayonPlayer({container:'#player',url:'',enhancements:{casting:{chromecast:false}},library:{searchEndpoint:'/api/test/search',detailEndpoint:false,resolveEndpoint:false,episodes:Array.from({length:24},(_,i)=>({title:'第 '+(i+1)+' 集',url:'https://www.iqiyi.com/v_episode'+(i+1)+'.html',platform:'iqiyi'}))}});
 window.testPlayer=p;p.loading.show=false;
 const c=document.createElement('canvas');c.width=960;c.height=540;const ctx=c.getContext('2d');
 setInterval(()=>{const g=ctx.createLinearGradient(0,0,960,540);g.addColorStop(0,'#1e3548');g.addColorStop(1,'#0c141e');ctx.fillStyle=g;ctx.fillRect(0,0,960,540);ctx.fillStyle='#b0d9d0';ctx.font='16px sans-serif';ctx.fillText('CRAYON / PLAYER',42,92)},100);
 p.video.srcObject=c.captureStream(5);p.video.muted=true;void p.video.play();
 </script></html>`;
 const server = createServer((request,response)=>{
+  if(request.url.startsWith('/api/test/search')) {response.setHeader('Content-Type','application/json');response.end(JSON.stringify({items:[],source:'测试目录'}));return;}
   response.setHeader('Content-Type',request.url==='/player.js'?'text/javascript':'text/html; charset=utf-8');
   response.end(request.url==='/player.js'?bundle:html);
 });
@@ -61,6 +62,24 @@ try {
     await wake.focus(); await page.locator('[data-action="search"]').click();
     await page.waitForTimeout(2800);
     if(await page.locator('.crayon-library-panel').evaluate(element=>element.hidden))throw new Error('Search was closed by the menu timer');
+    const input=page.locator('.crayon-library-form input');
+    for(const name of ['西游记','流浪地球','西游记']) {
+      await input.fill(name);
+      await Promise.all([page.waitForResponse(response=>response.url().includes('/api/test/search')),page.locator('.crayon-library-form [type=submit]').click()]);
+    }
+    await page.locator('[data-action=history]').click();
+    await page.waitForTimeout(300);
+    if(JSON.stringify(await page.locator('.crayon-library-history-term').allTextContents())!==JSON.stringify(['西游记','流浪地球']))throw new Error('Search history was not deduplicated');
+    const firstDelete=await page.locator('.crayon-library-history-delete').first().boundingBox(),historyViewport=await page.locator('.crayon-library-results').boundingBox();
+    if(firstDelete.y<historyViewport.y || firstDelete.y+firstDelete.height>historyViewport.y+historyViewport.height)throw new Error('History delete button is clipped');
+    await page.screenshot({path:`.parser-inspection/history-${mobile?'mobile':'desktop'}.png`});
+    const remove=page.getByRole('button',{name:'删除搜索记录：西游记',exact:true});
+    if(mobile) await remove.tap(); else await remove.click();
+    if(JSON.stringify(await page.locator('.crayon-library-history-term').allTextContents())!==JSON.stringify(['流浪地球']))throw new Error('History deletion removed the wrong entry');
+    await page.reload();await page.evaluate(()=>window.testPlayer.library.open());await page.waitForTimeout(420);
+    if(JSON.stringify(await page.locator('.crayon-library-history-term').allTextContents())!==JSON.stringify(['流浪地球']))throw new Error('History deletion did not persist on reload');
+    const [reused]=await Promise.all([page.waitForResponse(response=>response.url().includes('/api/test/search')),page.locator('.crayon-library-history-term').click()]);
+    if(new URL(reused.url()).searchParams.get('q')!=='流浪地球')throw new Error('History did not start the selected search');
     await page.locator('[data-action="close"]').click();
     await page.locator('[data-action="fullscreen"]').click();
     if(!await page.evaluate(()=>document.fullscreenElement===window.testPlayer.template.$player))throw new Error('Fullscreen root changed');
@@ -74,7 +93,7 @@ try {
     await bar.waitFor({state:'visible'});
     await page.waitForTimeout(2800);
     if(!await bar.evaluate(element=>element.hidden) || await wake.evaluate(element=>getComputedStyle(element).opacity)!=='0')throw new Error('Hovered wake target obstructs idle viewing');
-    console.log(JSON.stringify({mobile,upperCentered:true,episodes:24,currentEpisode:5,autoHidden:true,wakeUnpainted:true,searchStaysOpen:true,fullscreen:true,externalWake:true}));
+    console.log(JSON.stringify({mobile,upperCentered:true,episodes:24,currentEpisode:5,autoHidden:true,wakeUnpainted:true,searchStaysOpen:true,historyPersists:true,individualDeletion:true,historyReuse:true,fullscreen:true,externalWake:true}));
     await context.close();
   }
   const native=await browser.newPage();await native.goto(`http://127.0.0.1:${server.address().port}/`);
