@@ -52,6 +52,8 @@ try {
     if(!await bar.evaluate(element=>element.hidden))throw new Error('External player controls were intercepted');
     if(mobile) await wake.tap(); else await wake.click();
     await bar.waitFor({state:'visible'});
+    await page.waitForTimeout(2800);
+    if(!await bar.evaluate(element=>element.hidden) || await wake.evaluate(element=>getComputedStyle(element).opacity)!=='0')throw new Error('Hovered wake target obstructs idle viewing');
     console.log(JSON.stringify({mobile,centered:true,autoHidden:true,wakeUnpainted:true,searchStaysOpen:true,fullscreen:true,externalWake:true}));
     await context.close();
   }

@@ -35,7 +35,7 @@ const css = `
 .crayon-library-bar{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:120;display:flex;justify-content:center;gap:7px;width:max-content;max-width:calc(100% - 24px);padding:9px;border:1px solid #ffffff26;border-radius:12px;background:#101b15e8;box-shadow:0 8px 28px #0006}
 .crayon-library-bar button{padding:5px 9px;background:#132219e8;box-shadow:0 2px 10px #0005}
 .crayon-library-wake{position:absolute;top:0;left:50%;transform:translateX(-50%);z-index:121;width:88px;height:20px;padding:0!important;border:0!important;border-radius:0 0 7px 7px!important;background:transparent!important;opacity:0;transition:opacity .15s}
-.crayon-library-wake:hover,.crayon-library-wake:focus-visible{opacity:1;background:#132219ed!important}
+.crayon-library-wake[aria-expanded=true]:hover,.crayon-library-wake:focus-visible{opacity:1;background:#132219ed!important}
 .crayon-library-panel{position:absolute;inset:0;z-index:150;display:flex;flex-direction:column;background:#101b15;padding:14px;overflow:hidden;user-select:text}
 .crayon-library-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;font-weight:600}.crayon-library-heading strong{font-size:16px}
 .crayon-library-form{display:flex;gap:6px}.crayon-library-form input{flex:1;width:100%;background:#0c1510;font-size:16px}
