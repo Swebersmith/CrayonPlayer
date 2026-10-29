@@ -1,6 +1,6 @@
-# 正版平台搜索与播放页接口
+# VideoSearch 搜索与分集接口
 
-接口运行在现有播放器 Worker 内，沿用网站密码会话或嵌入会话的 Bearer 凭证。无需新增数据库或第三方目录账号。
+搜索与分集统一转接 https://videosearch.webber.qzz.io/ 的 v1 API，原有各平台抓取、解析和分页实现已删除。播放器继续使用同源接口及现有网站/嵌入会话认证。
 
 ## 搜索
 
@@ -8,36 +8,24 @@
 
 - `q`：1–80 字片名。
 - `platform`：`all`（默认）、`iqiyi`、`qq`、`youku`、`mgtv`、`bilibili`。
-- `source`：可省略；`official` 和兼容旧前端的 `auto` 均只查询官方来源。`360` / `sogou` 已移除。
-
-响应的 `items` 包含 `id`、`title`、`year`、`type`、`episodeCount`、`description`、`platforms`、`links` 和 `sourceUrl`。`links[].url` 是经过域名及内容路径校验的官方视频播放页，`sourceUrl` 标识可追溯的官方搜索来源。不会把搜索页、首页或广告跳转作为播放 URL。
-
-不同年份、平台、类型及专辑 ID 不会因片名相同而合并。例如爱奇艺的《海市蜃楼》2025 年电视剧和 2018 年电影分别返回。
-
-`providers` 列出每个平台的 `status`（`ok` / `partial` / `unavailable`）、结果数和 `searchUrl`。部分平台失败仍保留其他平台的成功结果；全部失败时也会返回明确的状态及 `warning`，不能将其解释为官方没有这部作品。搜索只查询各平台第一页，不承诺覆盖其全部索引。
+- 服务端调用 `/v1/search?q=...&view=series&platforms=...&limit=20`，将 `qq` 映射为 `tencent`、`mgtv` 映射为 `mango`。
+- 响应保持播放器使用的 `items`、`providers`、`warning` 格式；同名不同版本分别显示。平台的 empty 状态表示无结果，degraded/stale 表示部分结果，unavailable/unsupported 表示查询受限。
+- `source` 参数仅为旧调用方保留 `official`/`auto` 兼容校验，不改变搜索来源。
 
 ## 分集
 
-将搜索结果中的 ID 原样传回：
+将返回的 `items[].id` 原样传回，不自行构造：
 
-`GET /api/player/detail?id=iqiyi:6244560312265801&platform=iqiyi`
+`GET /api/player/detail?id=...&platform=iqiyi`
 
-响应包含 `title`、`platforms`、`total`、`episodes`；每集提供 `title`、`url`、`platform`。爱奇艺按官方专辑分页读取，最多 500 个公开播放页；腾讯使用官方完整选集模式；哔哩哔哩读取正版番剧/影视季。官方总集数多于返回数量时会附带 `warning`。`page:` 结果代表单个官方播放页。
+ID 封装搜索结果的 `detail_url`，包含准确平台、版本和查询参数；服务端验证后跟随该地址。分集不按搜索的 limit 截断。所有平台均通过新服务读取目录，保留完整分集标题、上下篇、加更等名称。分集目录的 partial、complete、warnings 和缺集编号会转换为界面提示。
 
-## 当前官方来源
+剧集名与分集名保留 API 全文，以纯文本渲染；搜索卡片和选集按钮自动换行，桌面、紧凑模式和移动端均可滚动查看。
 
-- 爱奇艺搜索：`https://search.video.iqiyi.com/o?if=html5&key=片名&pageNum=1&pageSize=20`。PC 参数 `if=pcw` 对实际存在的剧集也可能返回空结果，已改用经实测可用的 HTML5 入口。
-- 爱奇艺选集：`https://pcw-api.iqiyi.com/albums/album/avlistinfo?aid=专辑ID&size=100&page=1`。
-- 腾讯搜索：`https://pbaccess.video.qq.com/trpc.videosearch.mobile_search.HttpMobileRecall/MbSearchHttp`，POST JSON；只提取腾讯自己的节目卡及腾讯播放页，排除短视频和其他平台外链。
-- 腾讯选集：`https://pbaccess.video.qq.com/trpc.videosearch.search_cgi.http/load_playsource_list_info`，采用 `scene=8` 的选集模式。
-- 哔哩哔哩：`https://api.bilibili.com/x/web-interface/search/type`，分别查询 `media_bangumi` / `media_ft`；分集为 `/pgc/view/web/season`。不查询普通用户视频。
-- 芒果 TV：官方搜索脚本使用的 `https://mobileso.bz.mgtv.com/pc/search/v1`，使用 `q`、`pn=1`、`pc=10`。`forbidden` 不为 0 时作为来源不可用处理。
-- 优酷：`https://so.youku.com/search_video/q_片名`。只接受可识别的搜索结果页面；验证页、跳转和空应用壳均作为来源不可用处理。
+## 请求边界
 
-这些是正版网站公开页面使用的数据入口，并非有稳定性承诺的开放 API；地区、源站访问限制及页面改版可能影响可用性。接口不会规避平台验证；受限的平台提供官网搜索入口。
+仅请求固定的 VideoSearch HTTPS 域名和允许的 v1 路径，不跟随重定向。不会向上游转发用户 Cookie、Authorization 或站点密码。请求限时 20 秒，JSON 最大 3 MiB；上游失败返回 502，界面允许重试。上游服务当前公开可用；若未来启用 API_KEY，应在服务端配置，不能把共享密钥写入前端。
 
-## 边界与验证
+官方播放地址仍使用域名和内容路径校验；服务仅发现播放页，媒体解析沿用现有播放器线路。
 
-所有上游请求仅使用代码中固定的官方域名；禁止任意 URL 请求和跨域重定向，不转发网站访问密码、Cookie 或 Authorization。每个请求限时 9 秒，响应最多 3 MiB，公开 GET 元数据短时缓存 120 秒。对外响应始终为私有且不缓存。
-
-回归数据为 2026-10-28 从对应官方端点实际响应提取的必要字段，位于 `test/fixtures/catalog/`。覆盖《海市蜃楼》电视剧/同名电影区分、24 个官方分集 URL、平台失败隔离、鉴权和任意地址拒绝。
+真实回归样本为 2026-10-29 的《海市蜃楼》作品及 24 集目录，位于 `test/fixtures/catalog/videosearch-*.json`。接口文档：https://videosearch.webber.qzz.io/openapi.json 。

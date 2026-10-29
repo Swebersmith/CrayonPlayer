@@ -1,0 +1,85 @@
+{
+  "ok": true,
+  "query": "海市蜃楼",
+  "view": "series",
+  "partial": true,
+  "total": 1,
+  "limit": 5,
+  "took_ms": 6608,
+  "results": [
+    {
+      "platform": "iqiyi",
+      "platform_name": "爱奇艺",
+      "id": "6244560312265801",
+      "title": "海市蜃楼",
+      "year": "2025",
+      "kind": "series",
+      "type_name": "电视剧",
+      "total_episodes": 24,
+      "url": "https://www.iqiyi.com/v_27puk4z5uko.html",
+      "detail_url": "/v1/iqiyi/series/6244560312265801?q=%E6%B5%B7%E5%B8%82%E8%9C%83%E6%A5%BC",
+      "score": 1,
+      "content_type": "series"
+    }
+  ],
+  "providers": [
+    {
+      "platform": "tencent",
+      "status": "unavailable",
+      "total": 0,
+      "count": 0,
+      "truncated": false,
+      "warnings": [
+        "TIMEOUT"
+      ],
+      "cached": false,
+      "fetched_at": "2026-10-29T05:06:02.828Z"
+    },
+    {
+      "platform": "iqiyi",
+      "status": "ok",
+      "total": 1,
+      "count": 1,
+      "truncated": false,
+      "warnings": [],
+      "cached": false,
+      "fetched_at": "2026-10-29T05:05:59.166Z"
+    },
+    {
+      "platform": "youku",
+      "status": "unavailable",
+      "total": 0,
+      "count": 0,
+      "truncated": false,
+      "warnings": [
+        "SCHEMA_OR_CHALLENGE"
+      ],
+      "cached": false,
+      "fetched_at": "2026-10-29T05:05:58.695Z"
+    },
+    {
+      "platform": "mango",
+      "status": "unavailable",
+      "total": 0,
+      "count": 0,
+      "truncated": false,
+      "warnings": [
+        "TIMEOUT"
+      ],
+      "cached": false,
+      "fetched_at": "2026-10-29T05:06:03.420Z"
+    },
+    {
+      "platform": "bilibili",
+      "status": "unavailable",
+      "total": 0,
+      "count": 0,
+      "truncated": false,
+      "warnings": [
+        "HTTP_412"
+      ],
+      "cached": false,
+      "fetched_at": "2026-10-29T05:05:57.253Z"
+    }
+  ]
+}

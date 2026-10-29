@@ -126,9 +126,9 @@ await player.library?.play('https://www.iqiyi.com/v_19rrjaail0.html', 'ql');
 await player.library?.play('西游记', 'm1907');
 ```
 
-随库导出 `VideoLibraryOptions`、`VideoLibraryController`，服务端入口导出 `handleVideoCatalog`、`searchVideoCatalog`、`videoCatalogDetail`。完整部署自动启用搜索；搜索、分集和解析接口复用原有登录，无需新增密钥或数据库。纯静态部署保留播放器内输入和线路选择，搜索与服务端解析需配套服务；静态 QL 网页仍可能提示域名未授权。
+随库导出 `VideoLibraryOptions`、`VideoLibraryController`，服务端入口导出 `handleVideoCatalog`、`searchVideoCatalog`、`videoCatalogDetail`。完整部署自动启用 VideoSearch 搜索（https://videosearch.webber.qzz.io）；搜索和分集通过服务端转接该接口，复用原有登录。剧集与分集完整名称自动换行显示。纯静态部署保留播放器内输入和线路选择，搜索与服务端解析需配套服务；静态 QL 网页仍可能提示域名未授权。
 
-复测：`node scripts/probe-search.mjs 片名` 验证目录来源；`node scripts/probe-parsers.mjs 网址` 验证嵌入；`node scripts/probe-ql.mjs 具体播放页网址` 验证解析。先 `npm run build:hosted`，再 `node scripts/verify-parser-playback.mjs --search` 实测内部搜索、选集、播放和全屏。浏览器脚本需已安装 `playwright-core` 和 Chrome，使用本地临时测试账号；结果保存在忽略的 `.parser-inspection/`。更新线上部署需同时构建页面和发布 Worker，沿用两项原有 secrets。
+复测：`node scripts/verify-search.mjs` 验证桌面、紧凑及手机视图的完整标题显示；`node scripts/probe-search.mjs 片名` 验证目录来源；`node scripts/probe-parsers.mjs 网址` 验证嵌入；`node scripts/probe-ql.mjs 具体播放页网址` 验证解析。先 `npm run build:hosted`，再 `node scripts/verify-parser-playback.mjs --search` 实测内部搜索、选集、播放和全屏。浏览器脚本需已安装 `playwright-core` 和 Chrome，使用本地临时测试账号；结果保存在忽略的 `.parser-inspection/`。更新线上部署需同时构建页面和发布 Worker，沿用两项原有 secrets。
 
 **跨站 iframe 密码登录**：`/parse?url=...` 或 `embed=1` 可在播放器内直接输入密码。登录优先保存在 `Secure; HttpOnly; SameSite=None; Partitioned` Cookie 中，有效 12 小时；同一宿主网站下换集、刷新和重新创建 iframe 可复用登录。普通首页仍使用原有的 `SameSite=Lax` 登录 Cookie，两个入口的登录互相隔离。
 

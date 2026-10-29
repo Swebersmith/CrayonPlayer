@@ -63,10 +63,10 @@ const css = `
 .crayon-library-history-term{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;padding:7px 10px!important}
 .crayon-library-history-delete{flex:none;width:34px;height:34px;display:grid;place-items:center;padding:7px!important;color:#8fa1b6!important}.crayon-library-history-delete:hover{color:#f4c9c9!important;background:#ec9a9a12!important}.crayon-library-history-delete svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round}
 .crayon-library-history-empty{margin:8px 2px;color:#8395aa;font-size:12px;line-height:1.7}
-.crayon-library-result{text-align:left;white-space:normal!important;display:flex;flex-direction:column;gap:4px;padding:12px 14px!important;background:#ffffff03!important}.crayon-library-result:hover{background:#ffffff08!important}.crayon-library-result strong{font-size:14px;font-weight:550}.crayon-library-result span{color:#8395aa;font-size:11px;line-height:1.5}
-.crayon-library-collection-title{display:block;font-size:16px;margin:3px 0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.crayon-library-episodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:7px;align-content:start}
-.crayon-library-episodes button{min-height:36px;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.crayon-library-result{flex-shrink:0;min-width:0;overflow-wrap:anywhere;text-align:left;white-space:normal!important;display:flex;flex-direction:column;gap:4px;padding:12px 14px!important;background:#ffffff03!important}.crayon-library-result:hover{background:#ffffff08!important}.crayon-library-result strong{font-size:14px;font-weight:550}.crayon-library-result span{color:#8395aa;font-size:11px;line-height:1.5}
+.crayon-library-collection-title{display:block;font-size:16px;margin:3px 0 8px;white-space:normal;overflow-wrap:anywhere;flex-shrink:0}
+.crayon-library-episodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr));gap:7px;align-content:start}
+.crayon-library-episodes button{min-height:44px;white-space:normal;overflow-wrap:anywhere;text-align:left;line-height:1.6;font-size:12px}
 .crayon-library-episodes [aria-current=true]{background:#a1e6d01b;border-color:#a1e6d05c;color:#c7f4e6;box-shadow:inset 0 0 0 1px #a1e6d00d}
 .crayon-library-platforms{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 12px}.crayon-library-platforms button{padding:5px 10px;font-size:12px}.crayon-library-platforms [aria-pressed=true]{background:#a1e6d015;color:#c3f0e0;border-color:#a1e6d03d}
 .crayon-library-empty{display:grid;justify-items:start;align-content:center;gap:10px;min-height:100px;padding:10px;color:#92a3b7}.crayon-library-empty strong{font-size:15px;color:#d5dfeb}.crayon-library-empty p{font-size:12px;margin:0;line-height:1.7;max-width:440px}
@@ -102,11 +102,11 @@ const css = `
 [data-crayon-library][data-compact=true] .crayon-library-history-term{padding:5px 7px!important;font-size:12px}
 [data-crayon-library][data-compact=true] .crayon-library-collection-title{font-size:13px;margin:2px 0 5px}
 [data-crayon-library][data-compact=true] .crayon-library-platforms{margin:4px 0 7px}
-[data-crayon-library][data-compact=true] .crayon-library-collection-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}
+[data-crayon-library][data-compact=true] .crayon-library-collection-meta{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}
 [data-crayon-library][data-compact=true] .crayon-library-collection-meta strong{margin:0;min-width:0}
 [data-crayon-library][data-compact=true] .crayon-library-collection-meta .crayon-library-platforms{margin:0;flex-shrink:0}
 [data-crayon-library][data-compact=true] .crayon-library-panel[data-view=episodes] .crayon-library-status{display:none}
-[data-crayon-library][data-compact=true] .crayon-library-episodes{grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:5px}
+[data-crayon-library][data-compact=true] .crayon-library-episodes{grid-template-columns:repeat(auto-fill,minmax(min(100%,180px),1fr));gap:5px}
 [data-crayon-library][data-compact=true] .crayon-library-episodes button{min-height:30px;padding:4px 6px;font-size:11px}
 @media(prefers-reduced-motion:reduce){[data-crayon-library] *{scroll-behavior:auto!important}}
 @media(pointer:coarse){
@@ -136,7 +136,7 @@ const css = `
 [data-crayon-library-mobile=true] .crayon-library-panel .crayon-library-result{padding:12px!important}
 [data-crayon-library-mobile=true] .crayon-library-result strong{font-size:15px}
 [data-crayon-library-mobile=true] .crayon-library-result .description{display:block}
-[data-crayon-library-mobile=true] .crayon-library-episodes{grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px}
+[data-crayon-library-mobile=true] .crayon-library-episodes{grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr));gap:8px}
 [data-crayon-library-mobile=true] .crayon-library-route-view{grid-template-columns:minmax(0,1fr)}
 `;
 const platformName = (id: string) => videoPlatforms.find(item => item.id === id)?.name || id;
@@ -337,8 +337,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     for (const episode of current.detail.episodes) {
       const link = officialPage(episode.url);
       if (!link || link.platform !== current.platform) continue;
-      const episodeLabel = /第\s*[\d一二三四五六七八九十百零]+\s*[集话期]/.exec(episode.title)?.[0] || episode.title;
-      const choice = button(episodeLabel, () => {
+      const choice = button(episode.title, () => {
         collection = current;
         void play(link.url, selected === 'native' ? 'ql' : selected, current.item.title + ' · ' + episode.title).catch(error => message(error.message));
       });
@@ -387,7 +386,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     }
     message(''); animateContent(routeView);
   }
-  const details = async (item: VideoItem, chosen = item.links[0]?.platform || '', target: HTMLElement = results, back = true) => {
+  const details = async (item: VideoItem, chosen = item.platforms[0] || '', target: HTMLElement = results, back = true) => {
     if (!detailEndpoint || !chosen) return;
     searchRequest?.abort(); const controller = new AbortController(); searchRequest = controller;
     const version = ++searchVersion, timer = setTimeout(() => controller.abort(), 25000);
@@ -409,14 +408,14 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     history = writeSearchHistory([term, ...history]); showingHistory = false;
     searchRequest?.abort(); const controller = new AbortController(); searchRequest = controller;
     const version = ++searchVersion, timer = setTimeout(() => controller.abort(), 30000);
-    results.replaceChildren(); share.hidden = true; message('正在搜索五平台播放页…');
+    results.replaceChildren(); share.hidden = true; message('正在通过 VideoSearch 搜索影片…');
     try {
-      const url = new URL(searchEndpoint, location.href); url.search = new URLSearchParams({ q: term, platform: platform.value, source: 'official' }).toString();
+      const url = new URL(searchEndpoint, location.href); url.search = new URLSearchParams({ q: term, platform: platform.value }).toString();
       const data = await request(url.href, controller) as VideoSearchResult;
       if (disposed || version !== searchVersion) return;
       for (const item of data.items) {
         const row = button('', () => { void details(item); }); row.className = 'crayon-library-result';
-        const title = document.createElement('strong'); title.textContent = item.title;
+        const title = document.createElement('strong'); title.textContent = item.title; title.title = item.title;
         const meta = document.createElement('span'); meta.textContent = [item.year, item.type, item.episodeCount ? `${item.episodeCount} 集/期` : '', item.platforms.map(platformName).join(' / ')].filter(Boolean).join(' · ');
         const description = document.createElement('span'); description.className = 'description'; description.textContent = item.description;
         row.append(title, meta, description); results.append(row);

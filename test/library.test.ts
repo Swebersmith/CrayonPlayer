@@ -31,7 +31,7 @@ it('distinguishes the Mirage series from the same-title film and offers only off
   expect(rows).toHaveLength(2);expect(rows[0].textContent).toContain('2025 · 电视剧 · 24 集/期');expect(rows[1].textContent).toContain('2018 · 电影');
   const link=art.template.$player.querySelector<HTMLAnchorElement>('a.crayon-library-result')!;
   expect(link.href).toBe('https://so.youku.com/search_video/q_'+encodeURIComponent('海市蜃楼'));
-  expect(new URL((global.fetch as jest.Mock).mock.calls[0][0]).searchParams.get('source')).toBe('official');
+  expect(new URL((global.fetch as jest.Mock).mock.calls[0][0]).searchParams.get('source')).toBeNull();
 });
 
 it('persists recent searches, deduplicates, reuses a term and removes only the chosen record',async()=>{
@@ -149,4 +149,18 @@ it('uses the embedded session for searches and locks on an expired session',asyn
   art.template.$player.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})); await flush();
   expect((global.fetch as jest.Mock).mock.calls[0][1].headers.Authorization).toBe('Bearer session-token');
   expect(locked).toHaveBeenCalledTimes(1);
+});
+
+
+it('renders complete series and episode names even without a preview link',async()=>{
+  const title='很长的作品名字：'+ '完整剧名'.repeat(25);
+  const episode='第 25 集 · 主角终于揭开谜团，保留完整副标题及上下篇';
+  global.fetch=jest.fn(async(input:string)=>response(input.includes('/search')?{items:[{...item,title,links:[]}],source:'VideoSearch'}:{title,episodes:[{title:episode,url:source,platform:'iqiyi'}],platforms:['iqiyi'],total:1})) as jest.Mock;
+  library=attachVideoLibrary(art,{}, {suspend,media,initialUrl:''});library.open();await submit('作品');
+  expect(art.template.$player.querySelector('.crayon-library-result strong')!.textContent).toBe(title);
+  (art.template.$player.querySelector('.crayon-library-result') as HTMLButtonElement).click();await flush();
+  expect(art.template.$player.querySelector('.crayon-library-collection-title')!.textContent).toBe(title);
+  expect(art.template.$player.querySelector('.crayon-library-episodes button')!.textContent).toBe(episode);
+  const url=new URL((global.fetch as jest.Mock).mock.calls[1][0]);
+  expect(url.searchParams.get('platform')).toBe('iqiyi');
 });
