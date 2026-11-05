@@ -12,16 +12,15 @@
 
 控制台的 Worker 名称必须与仓库根目录 `wrangler.jsonc` 中的 `name` 一致。想使用其他名称时，先在自己的仓库修改该字段，再创建同名 Worker。
 
-本仓库已声明两个必需的运行时密钥。直接导入 GitHub 并首次发布，可能因密钥尚未设置而失败。先创建 Worker，才能在下一步填好密钥，再连接仓库。
+本仓库已声明一个必需的运行时密钥。直接导入 GitHub 并首次发布，可能因密钥尚未设置而失败。先创建 Worker，才能在下一步填好密钥，再连接仓库。
 
 ## 2. 添加运行时密钥
 
-打开这个 Worker 的 **Settings → Variables and Secrets（设置 → 变量和机密）**，添加以下两项，类型均选择 **Secret（机密）**，然后保存并部署：
+打开这个 Worker 的 **Settings → Variables and Secrets（设置 → 变量和机密）**，添加`MEDIA_SECRET`，类型选择 **Secret（机密）**，然后保存并部署：
 
 - `MEDIA_SECRET`：媒体链接的签名密钥。使用密码管理器生成至少 32 字符的随机英文数字字符串。
-- `VIEWER_PASSWORD`：访问播放器的口令。设置一个独立的长随机口令。
 
-这两项必须添加在 Worker 的运行时设置中。**Build Variables and Secrets（构建变量和机密）只供构建使用，不能代替这里的运行时密钥。**
+此密钥必须添加在 Worker 的运行时设置中。**Build Variables and Secrets（构建变量和机密）只供构建使用，不能代替这里的运行时密钥。**
 
 密钥值不放进 GitHub、`wrangler.jsonc`、前端代码或播放链接。以后更新代码不需要重新生成；更换 `MEDIA_SECRET` 会使已有投屏链接失效。
 
@@ -36,7 +35,7 @@
 - 部署命令：`npx wrangler deploy --keep-vars`。
 - 预览命令（开启非生产分支 / PR 预览时）：`npx wrangler preview`。仓库已在 `wrangler.jsonc` 声明 `"previews": {}`，页面资源和兼容性配置仍放在顶层。
 
-预览有独立的运行时密钥。需要预览 PR 时，在 Worker 的 **Settings → Variables and Secrets → Previews Base** 中添加预览用的 `MEDIA_SECRET` 和 `VIEWER_PASSWORD`，类型选择 **Secret**；生产环境已设置的密钥不能代替预览配置。新建的 Preview 会取得 Base 密钥，已创建的 Preview 需要在该预览中单独更新密钥。预览登录页只需输入预览的 `VIEWER_PASSWORD`，无需用户名。
+预览有独立的运行时密钥。需要预览 PR 时，在 Worker 的 **Settings → Variables and Secrets → Previews Base** 中添加预览用的 `MEDIA_SECRET`，类型选择 **Secret**；生产环境已设置的密钥不能代替预览配置。新建的 Preview 会取得 Base 密钥，已创建的 Preview 需要在该预览中单独更新密钥。预览页面打开即可使用。
 
 Cloudflare 默认会根据 `package-lock.json` 安装依赖；本仓库的 `.node-version` 指定 Node.js 24。不要开启 `SKIP_DEPENDENCY_INSTALL`。如果之前已开启，移除该构建变量，或自行将构建命令改为 `npm ci && npm run build:hosted`。
 
@@ -49,12 +48,12 @@ Cloudflare 默认会根据 `package-lock.json` 安装依赖；本仓库的 `.nod
 ## 4. 打开并验证
 
 1. 在 Worker 的 **Deployments（部署）** 中确认最新 GitHub 提交的构建和部署均成功，且已成为当前活动部署。
-2. 打开 Cloudflare 提供的 HTTPS `workers.dev` 地址。在网页登录页输入 `VIEWER_PASSWORD` 的值，无需用户名。登录有效 12 小时，首页可点击「退出登录」。已有部署沿用原密码即可，无需重新配置 Secret。
-3. 首页显示 Crayon Player 后，可先用默认公开测试视频检查播放、全屏和手势。点击播放器画面内的「搜索」可搜索五平台影片、选择平台与分集，也可粘贴 MP4/M3U8 或具体播放页网址；全屏和嵌入模式保留相同入口。
+2. 打开 Cloudflare 提供的 HTTPS `workers.dev` 地址，即可进入播放器。
+3. 使用默认测试视频检查播放、全屏和手势，或粘贴 MP4 / M3U8 地址并点击「载入视频」。
 4. 开启去广告后，设置会显示已过滤秒数、未识别出广告或暂不支持过滤。无法读取片源时会显示具体错误，不自动切换原片、本地过滤或其他播放器。
 5. 投屏时，电视通过签名媒体地址读取过滤后的清单，不需要网页登录口令。实际可用性仍取决于片源连通性、设备编码支持和投屏发现条件。
 
-支持 `https://自己的播放器域名/parse?url=编码后的视频地址`，默认只显示播放器。播放器内「搜索 → 播放链接」可生成完整地址；已知平台播放页默认使用 QL，也可通过 `parser=tx|sd|ql|aibox|m1907|native` 指定线路。M1907 支持名称，其他解析线路接收播放页网址。搜索、分集和解析接口与播放器一起部署，并复用原有登录，不需要新增密钥或数据库。跨站 iframe 的登录受浏览器限制，详情及 SDK 接入方式见主 README。
+支持 `https://自己的播放器域名/parse?url=编码后的视频地址`，默认只显示播放器。独立部署已移除密码、搜索、选集、第三方解析和接入说明面板。
 
 如需自己的域名，在 Worker 的 **Settings → Domains & Routes（设置 → 域和路由）** 中添加专用播放器子域名，并等 HTTPS 生效后再使用。
 
@@ -68,12 +67,11 @@ Cloudflare 默认会根据 `package-lock.json` 安装依赖；本仓库的 `.nod
 
 ## 常见问题
 
-- **`The following required secrets have not been set`**：检查运行时的两项 Secret 是否保存并部署到了同名 Worker，再重试构建；只填构建变量无效。
+- **`The following required secrets have not been set`**：检查运行时的 `MEDIA_SECRET` 是否保存并部署到了同名 Worker，再重试构建；只填构建变量无效。
 - **`Your Wrangler configuration is missing a previews block`**：失败发生在 `wrangler preview`。确认构建使用包含 `"previews": {}` 的最新提交后重试。生产部署命令填 `npx wrangler deploy --keep-vars`，非生产分支 / PR 的预览命令填 `npx wrangler preview`，分别配置；open beta 的 WARNING 本身不会导致失败。预览随后缺少密钥时，按上面的 Previews Base 步骤设置。
 - **Worker 名称不匹配**：检查控制台名称与 `wrangler.jsonc` 的 `name`，不要通过随意修改部署目标绕过。
 - **一直是 Hello World**：检查 GitHub 构建是否成功、部署命令是否为 `wrangler deploy`，以及新版本是否已成为活动部署。
-- **一直提示登录或 401**：刷新页面，在网页输入访问密码；检查当前生产或预览环境的 `VIEWER_PASSWORD`、浏览器 Cookie 设置及登录是否过期。无需用户名，旧版浏览器保存的 Basic 登录凭据不再用于验证。
-- **显示“请配置 MEDIA_SECRET 和 VIEWER_PASSWORD”**：当前活动版本没有取得两个运行时密钥，回到运行时设置检查并部署。
+- **显示“请配置 MEDIA_SECRET”**：当前活动版本缺少媒体签名密钥，回到运行时设置检查并部署。
 - **页面打开，但清单失败**：先看页面的具体错误；上游 403/超时、无效清单和服务配置问题与 GitHub 自动更新是不同环节。
 
 完整部署会转发视频分片。请求量、CPU、流量策略和源站对 Cloudflare 出口的访问限制都会影响播放；部署成功不代表所有片源和设备都能播放。

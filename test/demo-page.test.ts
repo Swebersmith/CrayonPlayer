@@ -28,41 +28,41 @@ afterEach(()=>{
   window.history.replaceState(null,'','/'); document.body.innerHTML='';
 });
 
-it('authenticates before creating the embedded player and passes the session to its internal library',async()=>{
-  const source='https://www.iqiyi.com/v_19rrjaail0.html';
-  window.history.replaceState(null,'','/parse?'+new URLSearchParams({url:source}));
-  require('../demo'); expect(create).not.toHaveBeenCalled();
-  await new Promise(resolve=>setTimeout(resolve,0));
-  expect(create).toHaveBeenCalledWith(expect.objectContaining({url:'',prepareMedia:expect.any(Function),library:expect.objectContaining({source,parser:'ql',auth:expect.objectContaining({accessToken:expect.any(Function)})})}));
-  expect(document.body.dataset.embedded).toBe('true');
+it.each(['/', '/parse?url=https%3A%2F%2Fmedia.example%2Fmovie.mp4', '/?embed=1'])('starts immediately without authentication at %s', path=>{
+  window.history.replaceState(null,'',path);
+  require('../demo');
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(create.mock.calls[0][0]).toMatchObject({prepareMedia:'/api/player/prepare'});
+  expect(create.mock.calls[0][0].library).toBeUndefined();
+  expect(global.fetch).not.toHaveBeenCalled();
+  for (const selector of ['#viewer-gate','#show-integration','#integration-guide','#sign-out','#library-dock']) {
+    expect(document.querySelector(selector)).toBeNull();
+  }
 });
 
 it('shows unsafe query errors without creating a player',()=>{
   window.history.replaceState(null,'','/parse?url=javascript:alert(1)');
   require('../demo');
-  expect(create).not.toHaveBeenCalled(); expect(document.body.dataset.entryError).toBe('true');
+  expect(create).not.toHaveBeenCalled();
+  expect(document.body.dataset.entryError).toBe('true');
 });
 
-it('puts feature configuration on the player rather than adding page-level search/route controls',()=>{
+it('loads a media address through the form and destroys the previous player',()=>{
   require('../demo');
-  const options=create.mock.calls[0][0];
-  expect(options.library.searchEndpoint).toBe('/api/player/search');
-  expect(document.querySelector('.parser-menu')).toBeNull();
-  expect(document.querySelector('#source-form')).toBeNull();
-  const source='https://v.qq.com/x/cover/show/episode.html?token=a+b&part=2';
-  const link=new URL(options.library.shareLink(source,'ql'));
-  expect(link.pathname).toBe('/parse'); expect(link.searchParams.get('url')).toBe(source);
-  expect(link.searchParams.get('parser')).toBe('ql');
+  const first=create.mock.results[0].value;
+  const input=document.querySelector<HTMLInputElement>('#source-url')!;
+  input.value='https://media.example/movie.mp4?token=a+b&part=2';
+  document.querySelector('#source-form')!.dispatchEvent(new Event('submit',{cancelable:true}));
+  expect(first.destroy).toHaveBeenCalledTimes(1);
+  expect(create.mock.calls[1][0].url).toBe(input.value);
+  input.value='javascript:alert(1)';
+  document.querySelector('#source-form')!.dispatchEvent(new Event('submit',{cancelable:true}));
+  expect(create).toHaveBeenCalledTimes(2);
+  expect(document.body.dataset.entryError).toBe('true');
 });
 
-it('accepts a film name for M1907 links',()=>{
-  window.history.replaceState(null,'','/?'+new URLSearchParams({url:'西游记',parser:'m1907'}));
-  require('../demo');
-  expect(create).toHaveBeenCalledWith(expect.objectContaining({url:'',library:expect.objectContaining({source:'西游记',parser:'m1907'})}));
-});
-
-it('keeps static deployments usable while clearly disabling unavailable search/resolver endpoints',()=>{
+it('supports static playback without a preparation service',()=>{
   Object.assign(global,{__CRAYON_PREPARE_ENDPOINT__:''});
   require('../demo');
-  expect(create.mock.calls[0][0].library).toMatchObject({searchEndpoint:false,detailEndpoint:false,resolveEndpoint:false});
+  expect(create.mock.calls[0][0].prepareMedia).toBeUndefined();
 });

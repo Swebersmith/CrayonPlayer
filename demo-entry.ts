@@ -20,7 +20,7 @@ export function playbackEntry(href: string) {
   const source = page.searchParams.get('url');
   try {
     if (source === null && parse) throw new Error('缺少视频地址，请使用 /parse?url=编码后的视频地址。');
-    return { embedded, url: playbackSource(source === null ? demoSource : source, page.searchParams.get('parser') || 'native'), error: '' };
+    return { embedded, url: mediaAddress(source === null ? demoSource : source), error: '' };
   } catch (error) {
     return { embedded, url: '', error: (error as Error).message };
   }

@@ -2,7 +2,7 @@
 
 可独立部署，也可嵌入网页的 HTML5 视频播放器。支持 MP4 / HLS、投屏、触屏手势、拖动进度、断点续播、片头片尾和广告分片过滤。
 
-Crayon Player 是独立播放器。影片目录、账户和选集属于宿主网站。独立运行不需要任何指定视频网站的代码、账户、数据库或接口。演示页面另外提供可选的第三方解析线路。`prepareMedia` 是可选的通用接入配置，未配置时可使用静态演示与本地分片过滤；需要投屏过滤时可部署本仓库自带的服务。
+Crayon Player 是独立播放器。影片目录、账户和选集属于宿主网站。独立运行不需要任何指定视频网站的代码、账户、数据库或接口。独立页面提供视频直链输入，打开即可使用。`prepareMedia` 是可选的通用接入配置，未配置时可使用静态演示与本地分片过滤；需要投屏过滤时可部署本仓库自带的服务。
 
 ## 选择使用方式
 
@@ -38,41 +38,36 @@ npm run preview
 
 确认预览正常后，把 **`demo-dist/` 内的全部文件** 上传到静态托管，入口为 `index.html`。构建使用相对资源路径，可放在网站子目录；不要只上传 HTML，也不要双击本地 HTML 代替 HTTP(S) 部署。
 
-此方式提供播放器、手势、设置、记录和设备支持的投屏入口。本地 HLS 使用 Crayon 内的 HLS.js（MSE/MMS）过滤与播放；电视端过滤需要下一节的服务。缺少 MSE/MMS 的浏览器会明确提示不支持，不切换到系统 HLS。演示会显示当前部署模式。
+此方式提供播放器、手势、设置、记录和设备支持的投屏入口。本地 HLS 使用 Crayon 内的 HLS.js（MSE/MMS）过滤与播放；电视端过滤需要下一节的服务。缺少 MSE/MMS 的浏览器会明确提示不支持，不切换到系统 HLS。
 
 ### 配套服务与页面一起部署到 Cloudflare Workers
 
 此方案把页面、签名清单、分片和密钥转发部署到同一 HTTPS 站点，不需要其他视频网站、数据库或 KV/D1。配置在 `wrangler.jsonc`，默认 Worker 名称为 `crayon-player`，首次部署前可改为自己的名称。
 
-**只在 Cloudflare 控制台操作，并让 GitHub 更新自动部署**：按[控制台部署与 GitHub 自动更新教程](docs/cloudflare-github.md)操作。先创建同名 Worker、添加两项运行时 Secret，再到 Settings → Builds 连接本仓库的 `main`。构建命令填 `npm run build:hosted`，部署命令填 `npx wrangler deploy --keep-vars`；Node.js 24 已由 `.node-version` 指定。运行时密钥不能只填在构建变量里。
+**只在 Cloudflare 控制台操作，并让 GitHub 更新自动部署**：按[控制台部署与 GitHub 自动更新教程](docs/cloudflare-github.md)操作。先创建同名 Worker、添加运行时 Secret `MEDIA_SECRET`，再到 Settings → Builds 连接本仓库的 `main`。构建命令填 `npm run build:hosted`，部署命令填 `npx wrangler deploy --keep-vars`；Node.js 24 已由 `.node-version` 指定。运行时密钥不能只填在构建变量里。
 
 以下为使用本地命令行部署的方式：
 
 ```sh
 npx wrangler login
 npx wrangler secret put MEDIA_SECRET
-npx wrangler secret put VIEWER_PASSWORD
 npm run deploy:check
 npm run deploy
 ```
 
 - `MEDIA_SECRET`：签名随机密钥，建议至少 32 字符。可在自己的终端运行 `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"` 生成，再在 secret 提示中输入。不能放进前端、Git 或 `vars`。
-- `VIEWER_PASSWORD`：访问页面和准备接口的口令，建议使用长的随机英文数字口令。打开播放器后，在网页登录页只输入该密码，无需用户名。
 - `secret put` 会修改远端 Worker；先确认 Cloudflare 账户和 Worker 名称。后续更新通常只需 `npm ci` 和 `npm run deploy`，不要重设密钥，否则旧投屏链接会失效。
-- `deploy:check` 只构建并打包检查，`deploy` 才发布。Workers Builds 默认自动安装依赖，使用构建命令 `npm run build:hosted`、部署命令 `npx wrangler deploy --keep-vars`，并提前配置上述两个运行时 secret；首次配置的完整顺序见控制台教程。
-- 此模式自动启用 `prepareMedia: '/api/player/prepare'`。页面和准备接口需要登录；电视读取的媒体链接只验证签名，无需网页口令，默认有效 8 小时。请勿公开转发这些临时链接。
-- 登录状态保存在签名的 HttpOnly / Secure Cookie 中，有效 12 小时，过期后重新输入密码。首页提供「退出登录」。沿用已有 `VIEWER_PASSWORD` 和 `MEDIA_SECRET`，无需新增配置；更换访问密码会使已有浏览器登录失效。登录后回到原播放链接，密码不进入 URL 或前端存储。
-- 默认的「全部资源」模式会转发视频流量；「仅清单」模式只处理 HLS 清单，视频分片和密钥由播放设备直连片源。平台请求量、带宽策略、CPU 和上游连通性限制仍然适用。不要把准备接口改成匿名开放代理。
+- `deploy:check` 只构建并打包检查，`deploy` 才发布。Workers Builds 默认自动安装依赖，使用构建命令 `npm run build:hosted`、部署命令 `npx wrangler deploy --keep-vars`，并提前配置上述运行时 secret；首次配置的完整顺序见控制台教程。
+- 此模式自动启用 `prepareMedia: '/api/player/prepare'`。页面和准备接口公开访问，电视读取的媒体链接验证签名，默认有效 8 小时。请勿公开转发这些临时链接。
+- 默认的「全部资源」模式会转发视频流量；「仅清单」模式只处理 HLS 清单，视频分片和密钥由播放设备直连片源。平台请求量、带宽策略、CPU 和上游连通性限制仍然适用。
 
-本地验证完整部署：在仓库根目录创建未提交的 `.dev.vars`，写入 `MEDIA_SECRET=自己的测试密钥` 和 `VIEWER_PASSWORD=自己的测试口令`，运行 `npm run dev:hosted`。改动 Worker 配置后运行 `npm run worker:types`。本地口令、生成类型和 `.wrangler/` 不进入版本库或 npm 包。
+本地验证完整部署：在仓库根目录创建未提交的 `.dev.vars`，写入 `MEDIA_SECRET=自己的测试密钥`，运行 `npm run dev:hosted`。改动 Worker 配置后运行 `npm run worker:types`。本地密钥、生成类型和 `.wrangler/` 不进入版本库或 npm 包。
 
 依据：[Workers 静态资源路由](https://developers.cloudflare.com/workers/static-assets/routing/worker-script/)、[Wrangler 安装](https://developers.cloudflare.com/workers/wrangler/install-and-update/)、[Secrets 配置](https://developers.cloudflare.com/workers/configuration/secrets/)。
 
 ### 获取独立播放入口
 
-完整部署后，在 Cloudflare 的 Domains & Routes 查看自己的 HTTPS 域名。直接打开首页，粘贴视频地址并点击 **生成播放链接**，即可复制编码完整的链接。入口前缀为：
-
-首页右上角的 **接入说明** 提供 App 接口前缀、完整播放链接和 iframe 示例，支持替换视频地址并分别复制；示例自动使用当前部署域名。纯静态部署会保留网站所在子目录。
+完整部署后可直接打开首页，粘贴 MP4 或 M3U8 视频地址并点击「载入视频」。现有直链入口仍可使用。
 
 ```text
 https://你的播放器域名/parse?url=
@@ -86,59 +81,9 @@ playerUrl.searchParams.set('url', 'https://media.example/video.m3u8?token=abc&ep
 // playerUrl.href 可以独立打开；iframe 接入时需允许 fullscreen / autoplay / picture-in-picture。
 ```
 
-`/parse` 默认只显示播放器；添加 `&embed=0` 可显示完整页面。首页也支持 `/?url=编码后的视频地址`。纯静态部署使用首页查询参数，首页生成链接时会保留所在子目录。
+`/parse` 默认只显示播放器；添加 `&embed=0` 可显示完整页面。首页也支持 `/?url=编码后的视频地址`。纯静态部署使用首页查询参数，
 
-此入口默认接收媒体地址；视频网站播放页可选择下述第三方线路。首次访问只需在网页输入 `VIEWER_PASSWORD`，不能将密码或 `MEDIA_SECRET` 拼进 URL。登录会保留原播放链接的地址参数。
-
-### 播放器内搜索、选集与解析
-
-搜索、选集、线路和重试都位于 ArtPlayer 自身的播放节点内，元素全屏、网页全屏以及只显示播放器的嵌入模式均可使用。轻触画面或移动鼠标会唤出上方居中的悬浮菜单，2.5 秒无操作后自动隐藏；也可轻触画面顶部边缘或在播放器内按 `M` 唤出，按 `Esc` 收起。顶部入口在观看时不显示文字或按钮背景，仍支持键盘聚焦。点击「选集」可在画面内展开已选影片的分集，当前播放集会高亮；宿主也可用 `library.episodes` 提供官方分集页，或调用 `player.library.openEpisodes()` 打开。未取得分集信息时会提示先搜索影片。
-
-播放器采用统一的石墨灰玻璃面板和薄荷绿强调色。按钮有连贯的悬停与按压反馈，搜索、选集、线路、设置和投屏面板从入口平滑展开并收回；系统启用「减少动态效果」时使用静态切换。打开面板后不会被菜单定时器关闭。点击「搜索」，输入片名检索腾讯视频、爱奇艺、优酷、芒果 TV、哔哩哔哩；选择影片、平台、分集后，将真实官方播放页传给解析器。也可直接粘贴具体播放页网址。搜索结果不保证上游一定支持播放，第三方播放器内部控件的样式由上游提供。
-
-搜索面板会在本地浏览器保留最近 20 个搜索片名，重复搜索自动置顶。点击历史片名可重新搜索，旁边的删除按钮仅删除对应记录；搜索结果页可通过「历史记录」返回列表。播放网址不写入搜索历史。浏览器不允许本地存储时，历史仍可在本次播放器会话内使用。
-
-手机轻触顶部中央区域即可唤出菜单。菜单使用独立的隐藏计时，抬手和底部控制栏的隐藏不会中断按钮点击。菜单、选集和历史删除按钮的操作区至少 44 像素，按压反馈保持点击位置稳定。搜索、选集和线路在手机上展开为播放器自身的可滚动大面板，关闭后恢复视频画面；面板跟随可视区域和横竖屏变化，支持键盘弹出后的滚动操作。打开搜索时不会自动弹键盘，点击输入框后再输入。
-
-- 搜索直接请求爱奇艺、腾讯视频、优酷、芒果 TV、哔哩哔哩各自的官方搜索入口，不再依赖 360 / 搜狗目录。全部平台并行查询，不会因为某个平台已有同名电影就停止补搜电视剧；结果显示年份、类型和集数，并保留不同版本。爱奇艺、腾讯、哔哩哔哩的分集也读取对应官方数据。平台限制访问、超时或返回验证页面时，会明确提示结果可能不全并提供官网搜索入口，不把故障当成没有资源。接口参数和来源见 [正版平台搜索接口](docs/official-search.md)。
-- 前四条解析线路接收 HTTP(S) 播放页地址。第五条 M1907 接收名称或播放页，实际参数为 `https://im1907.top/?jx=`。只有 M1907 接受纯片名。
-- QL 在完整部署中通过登录保护的 `POST /api/player/resolve` 获取媒体地址，交给 Crayon 播放。适配器从页面配置读取临时 token，调用固定上游的解析请求，不执行其前端授权脚本，也不转发用户登录 Cookie 或凭证。
-- TX、SD、AIBox、M1907 的上游网页作为图层嵌入播放器自身节点，切换和搜索入口保留在画面内；这些线路使用上游控件，Crayon 的媒体过滤与投屏功能只作用于自身实际播放的媒体。
-- 2026-10-28 验证：真实爱奇艺、优酷、哔哩哔哩、腾讯、芒果播放页均通过 QL 返回 M3U8；爱奇艺完成搜索、平台选择、选集、解析和实际播放的浏览器测试，并验证了全屏内搜索。接口成功与实播分别验证，不保证所有节目、平台和网络均可用。M1907 与 AIBox 的结果仍取决于上游网页和节点状态。
-
-完整部署示例：`/parse?parser=ql&url=编码后的播放页地址`；按名称调用第五条：`/parse?parser=m1907&url=编码后的片名`。支持线路 ID：`native`、`tx`、`sd`、`ql`、`aibox`、`m1907`。配置位于 `src/library-sources.ts`。播放器内部的「播放链接」和网页接入说明均保留所选线路。
-
-SDK 接入同样可以启用播放器内搜索，不依赖本项目演示网页的 DOM：
-
-```ts
-const player = createCrayonPlayer({
-  container: '#player',
-  url: '', // 可先搜索，再选择播放；也可填媒体直链。
-  prepareMedia: '/api/player/prepare',
-  library: {
-    searchEndpoint: '/api/player/search',
-    detailEndpoint: '/api/player/detail',
-    resolveEndpoint: '/api/player/resolve',
-  },
-});
-player.library?.open();
-await player.library?.play('https://www.iqiyi.com/v_19rrjaail0.html', 'ql');
-await player.library?.play('西游记', 'm1907');
-```
-
-随库导出 `VideoLibraryOptions`、`VideoLibraryController`，服务端入口导出 `handleVideoCatalog`、`searchVideoCatalog`、`videoCatalogDetail`。完整部署自动启用 VideoSearch 搜索（https://videosearch.webber.qzz.io）；搜索和分集通过服务端转接该接口，复用原有登录。剧集与分集完整名称自动换行显示。纯静态部署保留播放器内输入和线路选择，搜索与服务端解析需配套服务；静态 QL 网页仍可能提示域名未授权。
-
-复测：`node scripts/verify-search.mjs` 验证桌面、紧凑及手机视图的完整标题显示；`node scripts/probe-search.mjs 片名` 验证目录来源；`node scripts/probe-parsers.mjs 网址` 验证嵌入；`node scripts/probe-ql.mjs 具体播放页网址` 验证解析。先 `npm run build:hosted`，再 `node scripts/verify-parser-playback.mjs --search` 实测内部搜索、选集、播放和全屏。浏览器脚本需已安装 `playwright-core` 和 Chrome，使用本地临时测试账号；结果保存在忽略的 `.parser-inspection/`。更新线上部署需同时构建页面和发布 Worker，沿用两项原有 secrets。
-
-**跨站 iframe 密码登录**：`/parse?url=...` 或 `embed=1` 可在播放器内直接输入密码。登录优先保存在 `Secure; HttpOnly; SameSite=None; Partitioned` Cookie 中，有效 12 小时；同一宿主网站下换集、刷新和重新创建 iframe 可复用登录。普通首页仍使用原有的 `SameSite=Lax` 登录 Cookie，两个入口的登录互相隔离。
-
-旧版 WebView 等环境不接受 Cookie 时，播放器只将限时嵌入凭证保存在自己源下的 `sessionStorage`，在同一标签页内刷新、换集或重新创建 iframe 时复用。原始密码只经 HTTPS 发送给播放器的认证接口，不写入 localStorage/sessionStorage、URL、日志或跨窗口消息；外层网站无法通过跨源 DOM 读取密码或凭证。不要把播放器部署在不受信任网页的同一源下。若浏览器同时禁止 Cookie 和站点存储，则只能保持当前页面内存中的登录，刷新或重建 iframe 仍需重新输入。
-
-嵌入凭证用于嵌入登录检查、媒体准备、搜索、分集和解析，不能当作首页登录 Cookie 使用；过期或更换 `VIEWER_PASSWORD` 后失效。设置 → 退出登录清除当前嵌入环境的登录状态。宿主无需增加服务端；若设置 iframe sandbox，需要允许 `allow-scripts allow-same-origin`，并保持播放器与宿主跨源。`allow` 需包含所需的 fullscreen / autoplay / picture-in-picture 权限。
-
-嵌入界面及其编译后的 JS/CSS 为公开启动文件，不包含密钥；媒体准备接口仍要求有效登录，认证成功前不会加载视频。无需修改现有两个 Worker secrets。
-
-独立部署 **无需数据库、KV、D1 或视频网站账户**。签名媒体链接无需数据库保存，观看进度使用当前浏览器的 localStorage，不会跨设备自动同步。
+此入口接收 HTTP(S) 媒体直链，打开即可播放。独立页面已移除密码、搜索、选集、第三方解析和接入说明面板。
 
 ## 接入自己的网页
 
@@ -295,7 +240,7 @@ const response = await handleMediaRelay(request, {
 
 **手机一直显示加载**：网站应提供能直接调用 Crayon `play()` 的点击播放按钮，以满足有声播放的用户手势限制。准备请求超时会停止加载并提示；HLS 致命错误最多连续恢复 3 次，仍失败会停止并提示，不切换过滤方式或播放器。
 
-**准备接口 401**：刷新播放器页面并输入 `VIEWER_PASSWORD` 重新登录，无需用户名。准备接口使用登录 Cookie，未登录时返回 JSON 401，不再触发浏览器用户名弹窗；自定义服务的 `authorize` 应验证宿主会话，不要把签名密钥作为前端口令。
+**准备接口 401**：自定义服务可检查其 `authorize` 配置。仓库附带的独立部署无需访问密码。
 
 **是不是只支持某一个资源？**：不是。过滤器按 HLS 清单结构识别插播，包含通用规则与已验证的插播路径规则，不按片源名称限制播放。`no-match` 表示未识别出可安全移除的广告，`unsupported` 表示当前格式保守保留；两者都可以继续播放，不能当成“已经没有广告”。
 
