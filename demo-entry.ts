@@ -13,10 +13,11 @@ export function mediaAddress(value: string): string {
 }
 
 /** The query contains a media URL; it is never executable code or HTML. */
-export function playbackEntry(href: string) {
+export function playbackEntry(href: string, framed = false) {
   const page = new URL(href);
   const parse = /^\/parse\/?$/.test(page.pathname);
-  const embedded = page.searchParams.get('embed') === '1' || (parse && page.searchParams.get('embed') !== '0');
+  const embed = page.searchParams.get('embed');
+  const embedded = embed === '1' || (embed !== '0' && (parse || framed));
   const source = page.searchParams.get('url');
   try {
     if (source === null && parse) throw new Error('缺少视频地址，请使用 /parse?url=编码后的视频地址。');

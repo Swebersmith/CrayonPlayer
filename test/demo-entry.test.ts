@@ -33,3 +33,10 @@ it('rejects film names even when an old parser parameter is present',()=>{
   const link='https://player.example/?'+new URLSearchParams({url:'西游记',parser:'m1907'});
   expect(playbackEntry(link)).toMatchObject({url:'',error:expect.any(String)});
 });
+
+it('automatically embeds homepage links inside frames and honors explicit layout parameters',()=>{
+  expect(playbackEntry('https://player.example/?url=https://media.example/movie.mp4',true).embedded).toBe(true);
+  expect(playbackEntry('https://player.example/?embed=0',true).embedded).toBe(false);
+  expect(playbackEntry('https://player.example/parse?embed=0',true).embedded).toBe(false);
+  expect(playbackEntry('https://player.example/?embed=1').embedded).toBe(true);
+});

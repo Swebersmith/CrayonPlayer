@@ -2,11 +2,10 @@ import { createCrayonPlayer } from './src/index';
 import { mediaAddress, playbackEntry } from './demo-entry';
 
 declare const __CRAYON_PREPARE_ENDPOINT__: string;
-const entry = playbackEntry(window.location.href);
+const entry = playbackEntry(window.location.href, window.self !== window.top);
 const status = document.querySelector<HTMLDivElement>('#status')!;
 const form = document.querySelector<HTMLFormElement>('#source-form')!;
 const input = document.querySelector<HTMLInputElement>('#source-url')!;
-document.body.dataset.embedded = String(entry.embedded);
 let player: ReturnType<typeof createCrayonPlayer> | undefined;
 const destroyPlayer = () => { player?.destroy(); player = undefined; };
 const showError = (message: string) => { document.body.dataset.entryError = 'true'; status.textContent = message; };

@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { playbackEntry } from '../demo-entry';
 
 let listeners: {type:string;listener:EventListener}[];
 let create: jest.Mock;
@@ -65,4 +66,18 @@ it('supports static playback without a preparation service',()=>{
   Object.assign(global,{__CRAYON_PREPARE_ENDPOINT__:''});
   require('../demo');
   expect(create.mock.calls[0][0].prepareMedia).toBeUndefined();
+});
+
+it.each([false,true])('selects the embedded layout before rendering or loading the player bundle (framed=%s)',framed=>{
+  const html=readFileSync(join(__dirname,'../index.html'),'utf8');
+  const bootstrap=html.match(/<script>([\s\S]*?)<\/script>/)!;
+  expect(html.indexOf(bootstrap[0])).toBeLessThan(html.indexOf('<style>'));
+  expect(html.indexOf(bootstrap[0])).toBeLessThan(html.indexOf('<body>'));
+  for (const path of ['/', '/?embed=1', '/?embed=0', '/parse', '/parse/', '/parse?embed=0']) {
+    const location=new URL(path,'https://player.example');
+    const self={};
+    const root={dataset:{embedded:''}};
+    new Function('window','document',bootstrap[1])({location,self,top:framed?{}:self},{documentElement:root});
+    expect(root.dataset.embedded).toBe(String(playbackEntry(location.href,framed).embedded));
+  }
 });
