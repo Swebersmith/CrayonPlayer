@@ -33,11 +33,16 @@ export function attachFullscreen(art: Artplayer) {
   const toggle = () => { void toggleCrayonFullscreen(art).catch(() => { art.notice.show = '无法退出全屏，请使用设备返回或退出全屏键'; }); };
   const onClick = (event: Event) => {
     if (!button?.contains(event.target as Node)) return;
+    if ((event as MouseEvent).detail > 0) button.blur();
     event.preventDefault(); event.stopImmediatePropagation(); toggle();
   };
   const onKey = (event: KeyboardEvent) => {
     if (event.target !== button || !['Enter',' '].includes(event.key)) return;
-    event.preventDefault(); event.stopImmediatePropagation(); toggle();
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    if (event.repeat) return;
+    if (event.key === ' ') art.toggle();
+    else toggle();
   };
   const sync = () => {
     const active = fullscreenElement(document) === root || art.fullscreenWeb;

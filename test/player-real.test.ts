@@ -151,12 +151,25 @@ it('enters and exits fullscreen on the entire player and never calls the system 
   try{
     art.emit('video:loadedmetadata',new Event('loadedmetadata'));
     const button=root.querySelector<HTMLElement>('.art-control-fullscreen')!;
-    button.click();await Promise.resolve();
+    button.focus();
+    button.dispatchEvent(new MouseEvent('click',{bubbles:true,detail:1}));await Promise.resolve();
+    expect(document.activeElement).not.toBe(button);
     expect(enter).toHaveBeenCalledTimes(1);
     expect(document.fullscreenElement).toBe(root);
     expect(root.querySelector('.art-controls')).not.toBeNull();
     expect(button.getAttribute('aria-label')).toBe('退出全屏');
     expect(art.fullscreenWeb).toBe(false);
+    button.focus();
+    Object.defineProperty(art.video,'playing',{value:true,configurable:true});
+    pause.mockClear();
+    const space=new KeyboardEvent('keydown',{key:' ',code:'Space',bubbles:true,cancelable:true});
+    button.dispatchEvent(space);
+    expect(space.defaultPrevented).toBe(true);
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(exit).not.toHaveBeenCalled();
+    expect(document.fullscreenElement).toBe(root);
+    button.dispatchEvent(new KeyboardEvent('keydown',{key:' ',code:'Space',bubbles:true,repeat:true}));
+    expect(pause).toHaveBeenCalledTimes(1);
     button.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));await Promise.resolve();
     expect(exit).toHaveBeenCalledTimes(1);
     expect(document.fullscreenElement).toBeNull();

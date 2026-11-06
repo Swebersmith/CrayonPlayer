@@ -53,6 +53,8 @@ export function attachPlayerTheme(art: Artplayer) {
 [data-crayon-theme] .art-control:hover svg{transform:translateY(-1px)}
 [data-crayon-theme] .art-settings{z-index:150;background:var(--crayon-glass);border:1px solid var(--crayon-line);border-radius:18px;box-shadow:0 16px 60px #0007;backdrop-filter:blur(24px);padding:6px}
 [data-crayon-theme] .art-settings:not([hidden]){display:flex}
+[data-crayon-theme] .art-settings{scrollbar-width:none}
+[data-crayon-theme] .art-settings::-webkit-scrollbar{display:none;width:0;height:0}
 [data-crayon-theme] .art-setting-item{border-radius:10px;margin:2px 0}[data-crayon-theme] .art-setting-item:hover{background:#ffffff0a}
 [data-crayon-theme] [data-crayon-cast-panel]{z-index:150!important;background:var(--crayon-glass)!important;border:1px solid var(--crayon-line);border-radius:18px!important;backdrop-filter:blur(24px)}
 [data-crayon-theme] [data-crayon-cast-panel] button{border:1px solid var(--crayon-line)!important;border-radius:11px!important;background:#ffffff06!important;color:var(--crayon-ink)!important}
