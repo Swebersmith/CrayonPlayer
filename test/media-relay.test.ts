@@ -33,6 +33,22 @@ const prepare = (body: unknown = {url:rootUrl}, auth = cookie) => handlePlayerMe
 const get = (url: string, init?: RequestInit) => handlePlayerMedia(new Request(url,init),env);
 const grantOf = (url: string) => JSON.parse(Buffer.from(new URL(url).searchParams.get('token')!.split('.')[0],'base64url').toString('utf8'));
 
+it('prepares and serves Ruyi with both verified insertion packages removed for casting', async () => {
+  playlist = readFileSync(join(__dirname, '__fixtures__/ruyi/movie.m3u8'), 'utf8');
+  const url = 'https://svip.ryiplay18.com/20260531/6798_92c24498/2000k/hls/index.m3u8';
+  const ready = await (await prepare({url, relayMode: 'playlist'}))!.json();
+  expect(ready.filter.reason).toBe('filtered');
+  expect(ready.filter.removed).toHaveLength(2);
+  const response = (await get(ready.url))!;
+  expect(Number(response.headers.get('X-Crayon-Ad-Seconds'))).toBeCloseTo(40);
+  const content = await response.text();
+  expect(content).not.toContain('d522c169ac9f97e5971ab84f88d77f04.ts');
+  expect(content).not.toContain('ffc221e05db524605773b2216c92e1a4.ts');
+  expect(content).toContain('https://svip.ryiplay18.com/');
+  const unfiltered = await (await prepare({url, blockAds: false}))!.json();
+  expect(unfiltered.filter.removed).toEqual([]);
+});
+
 it('issues cookie-free filtered playlists, signs every retained segment/key, and preserves original time metadata', async () => {
   const ready = await (await prepare())!.json();
   expect(ready.filter.reason).toBe('filtered');

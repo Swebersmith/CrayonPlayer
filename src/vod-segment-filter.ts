@@ -190,7 +190,47 @@ const frameRates = [
 const onFrameGrid = (duration: number, rate: number) =>
   Math.abs(duration - Math.round(duration * rate) / rate) <= 0.00051;
 
-function detectGroups(groups: SegmentGroup[], total: number): Set<number> {
+function isRuyiInsertion(
+  groups: SegmentGroup[],
+  index: number,
+  total: number,
+  baseUrl: string
+): boolean {
+  const group = groups[index];
+  const values = group.segments.map(segment => segment.duration);
+  // Captured and visually verified on Ruyi episodes and movies: four 4s
+  // fragments + 3s, or five 4s fragments + 1s. Ordinary programme groups
+  // also have frequent discontinuities and 4s fragments, so neither alone
+  // is evidence. Never cut a fixed interval at the reported eight minutes.
+  if (
+    index === 0 || index === groups.length - 1 ||
+    group.segments[0].start < 120 ||
+    total - group.segments[0].start - group.duration < 60 ||
+    !((values.length === 5 && values[4] === 3) ||
+      (values.length === 6 && values[5] === 1)) ||
+    !values.slice(0, -1).every(value => value === 4)
+  ) return false;
+  try {
+    const url = new URL(baseUrl);
+    if (!/^(?:cdn\d*|svip)\.ryi?play\d+\.com$/i.test(url.hostname) ||
+        !/^\/\d{8}\/[^/]+\/2000k\/hls\/index\.m3u8$/.test(url.pathname))
+      return false;
+    if (!group.segments.every(segment => {
+      const media = new URL(segment.uri.trim(), url);
+      return directory(media.href, baseUrl) === directory(baseUrl, baseUrl) &&
+        /^[a-f\d]{32}\.ts$/i.test(media.pathname.split('/').pop() || '');
+    })) return false;
+  } catch { return false; }
+  // Require stable programme on both sides with genuinely variable cadence,
+  // not a run of uniform normal scenes or the short tail of a movie.
+  return [groups[index - 1], groups[index + 1]].every(neighbor =>
+    neighbor.directory === group.directory &&
+    neighbor.segments.length >= 5 &&
+    neighbor.segments.filter(segment => segment.duration !== 4).length >= 2
+  );
+}
+
+function detectGroups(groups: SegmentGroup[], total: number, baseUrl: string): Set<number> {
   const removed = new Set<number>();
   // A short clip, a single continuous stream, or a mostly-ad playlist does not
   // provide enough evidence about what the main programme looks like.
@@ -236,6 +276,7 @@ function detectGroups(groups: SegmentGroup[], total: number): Set<number> {
     const values = group.segments.map((segment) => segment.duration);
     if (group.duration <= 0 || group.duration > 60 || group.directory === null)
       continue;
+    if (isRuyiInsertion(groups, index, total, baseUrl)) removed.add(index);
     // Real Baofeng movie/series cadences vary, so a 70% modal-duration
     // requirement cannot be used for explicit insertion paths. Their current
     // ad package has nine fragments (8 x 3s + 2.04s), not at most eight.
@@ -364,7 +405,7 @@ export function filterVodAdSegments(
   };
   const parsed = parsePlaylist(content, baseUrl);
   if (!parsed) return unchanged;
-  const removedGroups = detectGroups(parsed.groups, parsed.duration);
+  const removedGroups = detectGroups(parsed.groups, parsed.duration, baseUrl);
   if (!removedGroups.size)
     return {
       ...unchanged,
