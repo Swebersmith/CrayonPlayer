@@ -26,8 +26,9 @@ export function settingSwitchButtons(settings: Setting[]): Setting[] {
         const enabled = !!item.switch;
         button.textContent = enabled ? '已开启' : '已关闭';
         button.setAttribute('aria-checked', String(enabled));
-        button.style.background = enabled ? '#167d46' : '#3f454c';
-        button.style.borderColor = enabled ? '#47ce81' : '#8a929b';
+        button.style.background = enabled ? '#ffffff' : '#3f454c';
+        button.style.color = enabled ? '#111821' : '#ffffff';
+        button.style.borderColor = enabled ? '#ffffff' : '#8a929b';
         item.$tooltip.title = item.$tooltip.textContent || '';
       };
       // Click bubbles to ArtPlayer's existing row handler exactly once. Native

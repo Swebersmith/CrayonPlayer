@@ -92,7 +92,7 @@ export function attachProgress(art: Artplayer) {
   // The visible track stays thin; the transparent area above it is a touch target.
   mini.style.cssText = 'position:absolute;left:0;right:0;bottom:0;height:24px;background:linear-gradient(to top,#ffffff40 3px,transparent 3px);touch-action:none;cursor:pointer;z-index:90';
   const fill = document.createElement('div');
-  fill.style.cssText = 'position:absolute;left:0;bottom:0;height:3px;width:0;background:var(--art-theme,#22c55e);pointer-events:none';
+  fill.style.cssText = 'position:absolute;left:0;bottom:0;height:3px;width:0;background:var(--art-theme,#ffffff);pointer-events:none';
   mini.appendChild(fill);
   const floating = document.createElement('div');
   floating.dataset.crayonFloatingProgress = '';

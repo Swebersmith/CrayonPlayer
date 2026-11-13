@@ -23,6 +23,7 @@ export function createCrayonPlayerCore(
   Artplayer.LOG_VERSION = false;
   Artplayer.DBCLICK_FULLSCREEN = false;
   const art = new Artplayer({
+    theme: '#ffffff',
     ...options,
     autoOrientation: false, // Crayon owns rotation so denied device locks are handled.
     playsInline: true,

@@ -18,6 +18,7 @@ it('preserves host playback configuration and installs gestures/casting once', (
     moreVideoAttr:{controls:true,crossOrigin:'anonymous'},
   }, enhancements);
   const options = construct.mock.calls[0][0];
+  expect(options.theme).toBe('#ffffff');
   expect(options.customType).toBe(customType);
   expect(options.settings.slice(-settings.length)).toEqual(settings);
   expect(options.settings).toEqual(expect.arrayContaining([
