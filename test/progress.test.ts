@@ -117,6 +117,46 @@ const enableMini = () => {
   control(false);
 };
 
+it.each([false, true])('animates from the local mini track or below the player with mini enabled = %s', enabled => {
+  if (enabled) enableMini();
+  art.isRotate = true;
+  const root = art.template.$player;
+  Object.defineProperty(root, 'clientHeight', { configurable: true, value: 400 });
+  for (const [element, metrics] of [
+    [mini(), { offsetLeft: 24, offsetTop: 376, offsetWidth: 752, offsetHeight: 24 }],
+    [floating(), { offsetLeft: 80, offsetTop: 320, offsetWidth: 640 }],
+  ] as const) {
+    Object.entries(metrics).forEach(([name, value]) => Object.defineProperty(element, name, { configurable: true, value }));
+  }
+  const oldAnimate = HTMLElement.prototype.animate;
+  const motions: { cancel: jest.Mock }[] = [];
+  const animate = jest.fn((_frames: Keyframe[], _options: KeyframeAnimationOptions) => {
+    const motion = { cancel: jest.fn() };
+    motions.push(motion);
+    return motion;
+  });
+  HTMLElement.prototype.animate = animate as any;
+  const gestures = attachGestures(art);
+  try {
+    touch(art.video, 'touchstart', 150, 100);
+    touch(art.video, 'touchmove', 150, 140);
+    expect(animate).toHaveBeenCalledTimes(3);
+    expect(animate.mock.calls[0][0][0]).toMatchObject({
+      left: enabled ? '24px' : '80px', top: enabled ? '397px' : '412px',
+      width: enabled ? '752px' : '640px', opacity: enabled ? 1 : 0,
+    });
+    expect(animate.mock.calls[0][0][1]).toMatchObject({ left: '80px', top: '320px', width: '640px' });
+    touch(art.video, 'touchmove', 150, 160);
+    expect(animate).toHaveBeenCalledTimes(3);
+    touch(art.video, 'touchend', 150, 160);
+    expect(motions.every(motion => motion.cancel.mock.calls.length === 1)).toBe(true);
+    expect(floating().hidden).toBe(true);
+  } finally {
+    gestures();
+    HTMLElement.prototype.animate = oldAnimate;
+  }
+});
+
 it('keeps the mini track visible and controls hidden while picture swipes synchronously seek both directions', () => {
   enableMini();
   const gestures = attachGestures(art);

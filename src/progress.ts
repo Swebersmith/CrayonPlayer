@@ -97,7 +97,7 @@ export function attachProgress(art: Artplayer) {
   const floating = document.createElement('div');
   floating.dataset.crayonFloatingProgress = '';
   floating.setAttribute('aria-hidden', 'true');
-  floating.style.cssText = 'position:absolute;left:calc(8% + var(--crayon-safe-left,0px));right:calc(8% + var(--crayon-safe-right,0px));bottom:calc(15% + var(--crayon-safe-bottom,0px));height:4px;border-radius:999px;background:#ffffff55;pointer-events:none;z-index:92';
+  floating.style.cssText = 'position:absolute;left:max(8%,calc(max(var(--crayon-safe-left,0px),var(--crayon-safe-right,0px)) + 12px));right:max(8%,calc(max(var(--crayon-safe-left,0px),var(--crayon-safe-right,0px)) + 12px));bottom:calc(15% + var(--crayon-safe-bottom,0px));height:4px;border-radius:999px;background:#ffffff55;pointer-events:none;z-index:92';
   const floatingFill = document.createElement('div');
   floatingFill.style.cssText = 'position:absolute;inset:0 auto 0 0;background:white;border-radius:inherit';
   const thumb = document.createElement('div');
@@ -109,6 +109,38 @@ export function attachProgress(art: Artplayer) {
   let displayed = art.currentTime;
   let dragging: { kind: 'touch'; id: number; bar: HTMLElement } | { kind: 'mouse'; bar: HTMLElement } | undefined;
   let suppressClickUntil = 0;
+  let floatingActive = false;
+  let floatingAnimations: Animation[] = [];
+  const cancelFloatingMotion = () => {
+    floatingAnimations.forEach(animation => animation.cancel());
+    floatingAnimations = [];
+  };
+  const enterFloating = () => {
+    if (!floating.animate || !floating.offsetWidth ||
+      typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    // Layout coordinates stay in the player's axes even in rotated fullscreen.
+    const fromMini = enabled && miniScrubbing();
+    const targetTop = floating.offsetTop;
+    const startTop = fromMini ? mini.offsetTop + mini.offsetHeight - 3 : root.clientHeight + 12;
+    const motion = { duration: 320, easing: 'cubic-bezier(.22,.8,.25,1)' };
+    floatingAnimations = [
+      floating.animate([
+        { left: `${fromMini ? mini.offsetLeft : floating.offsetLeft}px`, top: `${startTop}px`,
+          width: `${fromMini ? mini.offsetWidth : floating.offsetWidth}px`, height: '3px',
+          right: 'auto', bottom: 'auto', opacity: fromMini ? 1 : 0 },
+        { left: `${floating.offsetLeft}px`, top: `${targetTop}px`, width: `${floating.offsetWidth}px`,
+          height: '4px', right: 'auto', bottom: 'auto', opacity: 1 },
+      ], motion),
+      hud.animate([
+        { transform: `translate(-50%,${startTop - targetTop}px)`, opacity: 0 },
+        { transform: 'translate(-50%,0)', opacity: 1 },
+      ], motion),
+      thumb.animate([
+        { transform: 'translate(50%,-50%) scale(0)', opacity: 0 },
+        { transform: 'translate(50%,-50%) scale(1)', opacity: 1 },
+      ], motion),
+    ];
+  };
   const scrubbing = () => root.dataset.crayonScrubbing === 'true';
   const miniScrubbing = () => root.dataset.crayonScrubbingMini === 'true';
   const render = () => {
@@ -136,6 +168,11 @@ export function attachProgress(art: Artplayer) {
       progress.setAttribute('aria-valuemax', String(art.duration));
       progress.setAttribute('aria-valuenow', String(current));
       progress.setAttribute('aria-valuetext', hud.textContent);
+    }
+    if (floatingSeek !== floatingActive) {
+      cancelFloatingMotion();
+      floatingActive = floatingSeek;
+      if (floatingSeek) enterFloating();
     }
   };
   const sync = () => { displayed = art.currentTime; render(); };
@@ -249,7 +286,8 @@ export function attachProgress(art: Artplayer) {
       root.classList.remove('art-hover');
     }
   };
-  const reset = () => { finish(); displayed = 0; render(); art.emit('setBar', 'played', 0); };
+  const reset = () => { finish(); cancelFloatingMotion(); displayed = 0; render(); art.emit('setBar', 'played', 0); };
+  const layout = () => { cancelFloatingMotion(); render(); };
   const visibility = () => { if (document.hidden) finish(); };
   const oldTouchAction = progress?.style.touchAction;
   const attributes = ['role', 'tabindex', 'aria-label', 'aria-valuemin', 'aria-valuemax', 'aria-valuenow', 'aria-valuetext'];
@@ -281,7 +319,8 @@ export function attachProgress(art: Artplayer) {
   document.addEventListener('visibilitychange', visibility);
   root.addEventListener(SCRUB_EVENT, render);
   root.addEventListener(MINI_EVENT, preference);
-  root.addEventListener('crayon-layout-change', render);
+  root.addEventListener('crayon-layout-change', layout);
+  art.on('resize', layout);
   art.on('control', control);
   art.on('setBar', bar);
   art.on('seek', seek);
@@ -293,7 +332,7 @@ export function attachProgress(art: Artplayer) {
   timeEvents.forEach(event => art.on(event, sync));
   render();
   return () => {
-    finish(); hud.remove(); mini.remove(); floating.remove();
+    finish(); cancelFloatingMotion(); hud.remove(); mini.remove(); floating.remove();
     if (notice) notice.style.top = noticeTop;
     if (progress) {
       progress.style.touchAction = oldTouchAction || '';
@@ -321,7 +360,8 @@ export function attachProgress(art: Artplayer) {
     document.removeEventListener('visibilitychange', visibility);
     root.removeEventListener(SCRUB_EVENT, render);
     root.removeEventListener(MINI_EVENT, preference);
-    root.removeEventListener('crayon-layout-change', render);
+    root.removeEventListener('crayon-layout-change', layout);
+    art.off('resize', layout);
     art.off('control', control);
     art.off('setBar', bar);
     art.off('seek', seek);
