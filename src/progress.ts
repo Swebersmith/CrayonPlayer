@@ -44,11 +44,13 @@ export function miniProgressSetting(fallback = false): Setting {
   };
 }
 
-export function setScrubbing(art: Artplayer, active: boolean, preferMini = false) {
+export function setScrubbing(art: Artplayer, active: boolean, preferMini = false, floating = false) {
   const root = art.template.$player;
   if (active) {
     const mini = root.querySelector<HTMLElement>('[data-crayon-mini-progress]');
     root.dataset.crayonScrubbing = 'true';
+    if (floating) root.dataset.crayonFloatingSeek = 'true';
+    else delete root.dataset.crayonFloatingSeek;
     if (preferMini && !art.controls.show && mini && !mini.hidden) {
       root.dataset.crayonScrubbingMini = 'true';
     } else {
@@ -58,6 +60,7 @@ export function setScrubbing(art: Artplayer, active: boolean, preferMini = false
   } else {
     delete root.dataset.crayonScrubbing;
     delete root.dataset.crayonScrubbingMini;
+    delete root.dataset.crayonFloatingSeek;
   }
   root.dispatchEvent(new Event(SCRUB_EVENT));
 }
@@ -91,7 +94,17 @@ export function attachProgress(art: Artplayer) {
   const fill = document.createElement('div');
   fill.style.cssText = 'position:absolute;left:0;bottom:0;height:3px;width:0;background:var(--art-theme,#22c55e);pointer-events:none';
   mini.appendChild(fill);
-  root.append(hud, mini);
+  const floating = document.createElement('div');
+  floating.dataset.crayonFloatingProgress = '';
+  floating.setAttribute('aria-hidden', 'true');
+  floating.style.cssText = 'position:absolute;left:calc(8% + var(--crayon-safe-left,0px));right:calc(8% + var(--crayon-safe-right,0px));bottom:calc(15% + var(--crayon-safe-bottom,0px));height:4px;border-radius:999px;background:#ffffff55;pointer-events:none;z-index:92';
+  const floatingFill = document.createElement('div');
+  floatingFill.style.cssText = 'position:absolute;inset:0 auto 0 0;background:white;border-radius:inherit';
+  const thumb = document.createElement('div');
+  thumb.style.cssText = 'position:absolute;right:0;top:50%;width:18px;height:18px;border-radius:50%;background:white;transform:translate(50%,-50%)';
+  floatingFill.appendChild(thumb);
+  floating.appendChild(floatingFill);
+  root.append(hud, mini, floating);
   let enabled = art.setting.find('crayonMiniProgress')?.switch ?? miniPreference(art.option.miniProgressBar);
   let displayed = art.currentTime;
   let dragging: { kind: 'touch'; id: number; bar: HTMLElement } | { kind: 'mouse'; bar: HTMLElement } | undefined;
@@ -100,14 +113,17 @@ export function attachProgress(art: Artplayer) {
   const miniScrubbing = () => root.dataset.crayonScrubbingMini === 'true';
   const render = () => {
     const valid = seekable(art);
+    const floatingSeek = valid && !art.isLock && root.dataset.crayonFloatingSeek === 'true';
+    floating.hidden = !floatingSeek;
     if (miniScrubbing() && !art.controls.show) root.classList.remove('art-hover');
     const current = valid ? clamp(displayed, art.duration) : 0;
-    const format = root.dataset.crayonCompact === 'true' ? formatCompactDuration : formatDuration;
+    const format = floatingSeek || root.dataset.crayonCompact === 'true' ? formatCompactDuration : formatDuration;
     hud.textContent = `${format(current)} / ${format(art.duration)}`;
     hud.title = `${formatDuration(current)} / ${formatDuration(art.duration)}`;
     hud.hidden = !valid || art.isLock || !(art.controls.show || scrubbing() || document.activeElement === mini);
     mini.hidden = !valid || !enabled || art.controls.show || scrubbing() && !miniScrubbing();
     fill.style.width = `${valid ? current / art.duration * 100 : 0}%`;
+    floatingFill.style.width = fill.style.width;
     fill.style.height = miniScrubbing() ? '5px' : '3px';
     mini.tabIndex = mini.hidden || art.isLock ? -1 : 0;
     mini.style.setProperty('cursor', art.isLock ? 'not-allowed' : 'pointer', 'important');
@@ -169,7 +185,7 @@ export function attachProgress(art: Artplayer) {
     if (art.isLock || !seekable(art) || event.touches.length !== 1) { finish(); stop(event); return; }
     stop(event);
     dragging = { kind: 'touch', id: event.touches[0].identifier, bar: target };
-    setScrubbing(art, true, target === mini);
+    setScrubbing(art, true, target === mini, true);
     position(event.touches[0]);
   };
   const touchMove = (event: TouchEvent) => {
@@ -277,7 +293,7 @@ export function attachProgress(art: Artplayer) {
   timeEvents.forEach(event => art.on(event, sync));
   render();
   return () => {
-    finish(); hud.remove(); mini.remove();
+    finish(); hud.remove(); mini.remove(); floating.remove();
     if (notice) notice.style.top = noticeTop;
     if (progress) {
       progress.style.touchAction = oldTouchAction || '';

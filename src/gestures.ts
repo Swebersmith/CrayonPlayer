@@ -99,7 +99,8 @@ export function attachGestures(art: Artplayer, options: GestureOptions = {}) {
     if (!active.direction && Math.max(Math.abs(dx), Math.abs(dy)) < 12) return;
     if (!active.direction) {
       active.direction = Math.abs(dx) > Math.abs(dy) ? 'horizontal' : 'vertical';
-      if (active.direction === 'horizontal' && !art.option.isLive) setScrubbing(art, true, true);
+      if (active.direction === 'horizontal' && !art.option.isLive && Number.isFinite(art.duration) && art.duration > 0)
+        setScrubbing(art, true, true, true);
       restoreRate();
       clearTap();
     }

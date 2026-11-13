@@ -228,7 +228,7 @@ it('synchronizes real ArtPlayer bars and time labels on both drag surfaces befor
     const indicator = container.querySelector<HTMLElement>('.art-progress-indicator')!;
     expect(played.style.width).toBe('15.75%');
     expect(indicator.style.left).toBe('15.75%');
-    expect(container.querySelector('[data-crayon-progress-time]')!.textContent).toBe('10分钟30秒 / 1小时6分钟40秒');
+    expect(container.querySelector('[data-crayon-progress-time]')!.textContent).toBe('10:30 / 1:06:40');
     touch(art.video,'touchend',190);
     touch(art.template.$progress,'touchstart',200,210);
     touch(window,'touchmove',290,210);

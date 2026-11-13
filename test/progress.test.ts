@@ -13,6 +13,7 @@ let art: ReturnType<typeof fakeArt>;
 let dispose: () => void;
 const hud = () => art.template.$player.querySelector<HTMLElement>('[data-crayon-progress-time]')!;
 const mini = () => art.template.$player.querySelector<HTMLElement>('[data-crayon-mini-progress]')!;
+const floating = () => art.template.$player.querySelector<HTMLElement>('[data-crayon-floating-progress]')!;
 const control = (visible: boolean) => { art.controls.show = visible; art.emit('control', visible); };
 beforeEach(() => { localStorage.clear(); art = fakeArt(); dispose = attachProgress(art); });
 afterEach(() => { dispose(); document.body.innerHTML = ''; jest.restoreAllMocks(); });
@@ -27,9 +28,13 @@ it('updates the time and played bar synchronously on picture swipes without time
     expect(art.currentTime).toBe(60);
     expect(bars).toHaveBeenLastCalledWith('played', .6);
     expect(hud().hidden).toBe(false);
-    expect(hud().textContent).toBe('1分钟0秒 / 1分钟40秒');
+    expect(hud().textContent).toBe('1:00 / 1:40');
+    expect(floating().hidden).toBe(false);
+    expect((floating().firstElementChild as HTMLElement).style.width).toBe('60%');
     touch(art.video, 'touchend', 190);
     expect(art.template.$player.dataset.crayonScrubbing).toBeUndefined();
+    expect(floating().hidden).toBe(true);
+    expect(art.template.$player.dataset.crayonFloatingSeek).toBeUndefined();
   } finally { gestures(); }
 });
 
@@ -43,7 +48,7 @@ it('seeks to the finger position on the bar, tracks outside it, and clamps both 
   touch(window, 'touchmove', 290, 230);
   expect(art.currentTime).toBe(75);
   expect(bars).toHaveBeenLastCalledWith('played', .75);
-  expect(hud().textContent).toBe('1分钟15秒 / 1分钟40秒');
+  expect(hud().textContent).toBe('1:15 / 1:40');
   expect(progress.getAttribute('aria-valuenow')).toBe('75');
   touch(window, 'touchmove', -50); expect(art.currentTime).toBe(0);
   touch(window, 'touchend', 500); expect(art.currentTime).toBe(100);
@@ -59,6 +64,8 @@ it('keeps controls visible while dragging and cancels on source change, lock and
     touch(window, 'touchmove', 350);
     expect(art.currentTime).toBe(time);
     expect(art.template.$player.dataset.crayonScrubbing).toBeUndefined();
+    expect(floating().hidden).toBe(true);
+    expect(art.template.$player.dataset.crayonFloatingSeek).toBeUndefined();
   }
 });
 
@@ -210,6 +217,7 @@ it('resets the new source progress and removes listeners, UI and accessibility a
   expect(hud().textContent).toBe('0秒 / 1分钟40秒');
   dispose();
   expect(hud()).toBeNull(); expect(mini()).toBeNull();
+  expect(floating()).toBeNull();
   expect(art.template.$progress.getAttribute('role')).toBeNull();
   expect(touch(art.template.$progress, 'touchstart', 20).defaultPrevented).toBe(false);
 });
