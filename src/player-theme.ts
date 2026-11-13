@@ -93,7 +93,14 @@ export function attachPlayerTheme(art: Artplayer) {
   art.on('control',hide); art.on('play',hide);
   const setting = (visible: boolean) => {
     const panel = root.querySelector<HTMLElement>('.art-settings');
-    if (panel) void morphPanel(root,panel,root.querySelector<HTMLElement>('.art-control-setting')?.getBoundingClientRect(),visible);
+    if (!panel) return;
+    if (visible) {
+      panel.hidden = false;
+      // The control's click handler resizes after emitting `setting`. Measure
+      // the final layout before the animation captures its destination.
+      (art.setting as Artplayer['setting'] & { resize(): void }).resize();
+    }
+    void morphPanel(root,panel,root.querySelector<HTMLElement>('.art-control-setting')?.getBoundingClientRect(),visible);
   };
   art.on('setting',setting);
   return () => { observer?.disconnect(); const panel=root.querySelector<HTMLElement>('.art-settings');if(panel)cancelPanelMotion(panel); root.removeEventListener('pointerover',track);root.removeEventListener('focusin',track);root.removeEventListener('pointerleave',hide);root.removeEventListener('pointerdown',press,true);art.off('control',hide);art.off('play',hide);art.off('setting',setting);trail.remove();style.remove();delete root.dataset.crayonTheme; };

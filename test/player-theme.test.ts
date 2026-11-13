@@ -1,4 +1,40 @@
-import { morphPanel, cancelPanelMotion } from '../src/player-theme';
+import { attachPlayerTheme, morphPanel, cancelPanelMotion } from '../src/player-theme';
+import { fakeArt } from './helpers';
+
+it('measures the first settings animation after revealing and resizing the panel', async () => {
+  const art = fakeArt();
+  const root = art.template.$player;
+  const panel = document.createElement('section');
+  panel.className = 'art-settings';
+  const button = document.createElement('button');
+  button.className = 'art-control-setting';
+  button.getBoundingClientRect = () => ({ x: 800, y: 550, width: 46, height: 46 } as DOMRect);
+  root.append(panel, button);
+  let width = 201;
+  panel.getBoundingClientRect = () => ({ x: 700, y: 200, width, height: 300 } as DOMRect);
+  root.getBoundingClientRect = () => ({ x: 0, y: 0, width: 1000, height: 600 } as DOMRect);
+  const resize = jest.fn(() => {
+    expect(panel.hidden).toBe(false);
+    width = 250;
+  });
+  Object.assign(art.setting, { resize });
+  const oldAnimate = HTMLElement.prototype.animate;
+  const animate = jest.fn((_frames: Keyframe[], _options: KeyframeAnimationOptions) => ({ finished: Promise.resolve(), cancel: jest.fn() }));
+  HTMLElement.prototype.animate = animate as any;
+  const dispose = attachPlayerTheme(art);
+  try {
+    expect(panel.hidden).toBe(true);
+    art.emit('setting', true);
+    expect(resize).toHaveBeenCalledTimes(1);
+    const frames = animate.mock.calls[0][0];
+    expect(frames[1]).toMatchObject({ left: '700px', top: '200px', width: '250px', height: '300px' });
+    await Promise.resolve();
+  } finally {
+    dispose();
+    HTMLElement.prototype.animate = oldAnimate;
+    root.remove();
+  }
+});
 
 it('keeps the latest panel open when open/close animations are interrupted',async()=>{
   const root=document.createElement('div'),panel=document.createElement('section');root.append(panel);document.body.append(root);
