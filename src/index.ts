@@ -42,7 +42,7 @@ export interface CrayonPlayerOptions {
   poster?: string;
   autoplay?: boolean;
   blockAds?: boolean;
-  /** Initial server relay preference when prepareMedia is configured. Default: true. */
+  /** Initial server relay preference when prepareMedia is configured. Default: false. */
   serverRelay?: boolean;
   /** Relay all resources (default), or only playlists with direct media downloads. */
   relayMode?: MediaRelayMode;

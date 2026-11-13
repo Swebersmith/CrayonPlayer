@@ -15,7 +15,7 @@ export function saveRelayModePreference(mode: MediaRelayMode) {
   try { localStorage.setItem(MODE_KEY, mode); } catch { /* Optional storage. */ }
 }
 
-export function serverRelayPreference(fallback = true): boolean {
+export function serverRelayPreference(fallback = false): boolean {
   try {
     const saved = localStorage.getItem(RELAY_KEY);
     return saved === '1' ? true : saved === '0' ? false : fallback;
