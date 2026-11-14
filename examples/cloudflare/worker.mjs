@@ -1,14 +1,17 @@
 /// <reference path="./worker-configuration.d.ts" />
 import { handleMediaRelay } from '../../src/media-relay';
+import { handleParserResolver } from './parser-resolver.mjs';
 
 export default {
   /** @param {Request} request @param {Env} env */
   async fetch(request, env) {
     const incoming = new URL(request.url);
     if (incoming.pathname.startsWith('/auth/') ||
-      ['/api/player/search', '/api/player/detail', '/api/player/resolve'].includes(incoming.pathname)) {
+      ['/api/player/search', '/api/player/detail'].includes(incoming.pathname)) {
       return new Response('Not found', { status: 404 });
     }
+    const resolved = await handleParserResolver(request, { secret: env.MEDIA_SECRET, authorize: () => true });
+    if (resolved) return resolved;
     if (incoming.pathname.startsWith('/api/player/')) {
       if (!env.MEDIA_SECRET) return new Response('请配置 MEDIA_SECRET', { status: 503 });
       const relay = await handleMediaRelay(request, {

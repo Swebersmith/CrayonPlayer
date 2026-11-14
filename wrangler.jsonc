@@ -8,6 +8,7 @@
   "secrets": { "required": ["MEDIA_SECRET"] },
   "observability": {
     "enabled": true,
+    "redact_query_string": true,
     "logs": { "enabled": true, "head_sampling_rate": 1 },
     "traces": { "enabled": true, "head_sampling_rate": 0.01 }
   }

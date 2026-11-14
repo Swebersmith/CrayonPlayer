@@ -32,7 +32,7 @@ it('runs the standalone deployment with public pages/preparation and cookie-free
     expect(gate.headers.get('WWW-Authenticate')).toBeNull();
     expect(await gate.text()).toContain('Crayon Player');
     const auth = '';
-    for (const path of ['/auth/login', '/auth/logout', '/auth/embed/session', '/api/player/search', '/api/player/detail', '/api/player/resolve']) {
+    for (const path of ['/auth/login', '/auth/logout', '/auth/embed/session', '/api/player/search', '/api/player/detail']) {
       expect((await runtime.dispatchFetch('https://player.example' + path)).status).toBe(404);
     }
     expect((await runtime.dispatchFetch('https://player.example/',{headers:{Cookie:auth}})).status).toBe(200);
@@ -140,4 +140,46 @@ it('serves the page without secrets and requires a signing key only for media re
     expect((await runtime.dispatchFetch('https://player.example/')).status).toBe(200);
     expect((await runtime.dispatchFetch('https://player.example/api/player/prepare', {method:'POST'})).status).toBe(503);
   } finally { await runtime.dispose(); }
+});
+
+it('resolves HTML pages into signed Crayon HLS/MP4 streams, snapshots playlists and rejects stale image fragments',async()=>{
+  const code=esbuild.buildSync({entryPoints:['examples/cloudflare/worker.mjs'],bundle:true,write:false,format:'esm',platform:'browser'}).outputFiles[0].text;
+  let kind='hls',manifestReads=0;
+  const bytes=new Uint8Array(1280);bytes.fill(71,16);
+  const playlist='#EXTM3U\n#EXT-X-TARGETDURATION:8\n#EXTINF:8,\n#EXT-X-BYTERANGE:1264@16\nhttps://new-cdn.onewsvod.com/wrapped.png\n#EXT-X-ENDLIST';
+  const runtime=new Miniflare(convertV4MiniflareOptions({cf:false,workers:[{
+    name:'crayon-html-resolver',compatibilityDate:'2026-10-23',modules:true,script:code,
+    bindings:{MEDIA_SECRET:'development-media-secret-for-tests'},
+    serviceBindings:{ASSETS:()=>new NativeResponse('Crayon Player')},
+    outboundService:(request:Request)=>{
+      const u=new URL(request.url);
+      expect(request.headers.get('cookie')).toBeNull();
+      if(u.hostname==='svip.qlplayer.cyou'){
+        if(u.pathname==='/')return new NativeResponse('apiToken: "temporary-page-ticket"');
+        expect(u.searchParams.get('token')).toBe('temporary-page-ticket');
+        return new NativeResponse(JSON.stringify({code:200,type:kind==='mp4'?'auto':'m3u8',url:'https://new-cdn.onewsvod.com/'+(kind==='mp4'?'movie':'index.m3u8')}));
+      }
+      if(u.pathname==='/index.m3u8'){manifestReads++;return new NativeResponse(playlist);}
+      if(u.pathname==='/movie')return new NativeResponse(new Uint8Array([0,0,0,12,102,116,121,112,105,115,111,109]),{status:206,headers:{'Content-Type':'video/mp4','Content-Range':'bytes 0-11/12'}});
+      // Ignore Range like an image CDN: the relay must return the exact byte slice.
+      return new NativeResponse(kind==='stale'?new Uint8Array(204):bytes,{headers:{'Content-Length':kind==='stale'?'204':String(bytes.length)}});
+    },
+  }]}));
+  const resolve=()=>runtime.dispatchFetch('https://player.example/api/player/resolve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({parser:'ql',url:'https://v.youku.com/v_show/id_XNjU3OTQ2NDMyOA==.html'})});
+  try{
+    const result=await resolve();expect(result.status).toBe(200);
+    const ready=await result.json();expect(ready.type).toBe('m3u8');
+    expect(ready.url).toContain('/api/player/resolved/');
+    const cached=await runtime.dispatchFetch(ready.url);expect(cached.status).toBe(200);
+    const manifest=await cached.text();expect(manifestReads).toBe(1);
+    const media=manifest.split('\n').find((line:string)=>line.startsWith('https://'))!;
+    const part=await runtime.dispatchFetch(media,{headers:{Range:'bytes=16-1279'}});
+    expect(part.status).toBe(206);expect(part.headers.get('content-range')).toBe('bytes 16-1279/1280');
+    expect(new Uint8Array(await part.arrayBuffer())).toHaveLength(1264);
+    expect((await runtime.dispatchFetch(media.replace('wrapped.png','tampered.png'))).status).toBe(403);
+    kind='stale';const stale=await resolve();expect(stale.status).toBe(502);
+    expect((await stale.json()).error).toMatchObject({code:'STALE_MEDIA'});
+    kind='mp4';const file=await (await resolve()).json();expect(file.type).toBe('mp4');expect(file.url).toContain('/api/player/resolved-media?');
+    expect((await runtime.dispatchFetch('https://player.example/api/player/resolve',{method:'POST',headers:{'Origin':'https://evil.example','Content-Type':'application/json'},body:'{}'})).status).toBe(403);
+  }finally{await runtime.dispose();}
 });

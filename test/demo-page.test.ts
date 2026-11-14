@@ -81,3 +81,44 @@ it.each([false,true])('selects the embedded layout before rendering or loading t
     expect(root.dataset.embedded).toBe(String(playbackEntry(location.href,framed).embedded));
   }
 });
+
+const flushResolution=async()=>{for(let i=0;i<5;i++)await Promise.resolve();};
+it('resolves an HTML page and loads the returned stream with Crayon instead of an iframe',async()=>{
+  const source='https://v.youku.com/v_show/id_XNjU3OTQ2NDMyOA==.html';
+  global.fetch=jest.fn(async()=>({ok:true,json:async()=>({url:'https://player.example/api/player/resolved/123.m3u8',type:'m3u8'})})) as jest.Mock;
+  window.history.replaceState(null,'','/parse?url='+encodeURIComponent(source));
+  require('../demo');
+  expect(create).not.toHaveBeenCalled();
+  expect(document.querySelector('#status')!.textContent).toContain('正在解析');
+  await flushResolution();
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({url:'https://player.example/api/player/resolved/123.m3u8',player:{type:'m3u8'},prepareMedia:undefined}));
+  expect(document.querySelector('iframe')).toBeNull();
+  expect((document.querySelector('#source-url') as HTMLInputElement).value).toBe(source);
+});
+it('ignores a late HTML resolution after the user switches to a direct stream',async()=>{
+  let finish:(value:unknown)=>void=()=>{};
+  global.fetch=jest.fn(()=>new Promise(resolve=>{finish=resolve;})) as jest.Mock;
+  require('../demo');
+  const field=document.querySelector<HTMLInputElement>('#source-url')!;
+  field.value='https://www.iqiyi.com/v_nvusov4apo.html';
+  document.querySelector('#source-form')!.dispatchEvent(new Event('submit',{cancelable:true}));
+  field.value='https://media.example/direct.mp4';
+  document.querySelector('#source-form')!.dispatchEvent(new Event('submit',{cancelable:true}));
+  finish({ok:true,json:async()=>({url:'https://media.example/late.mp4',type:'mp4'})});
+  await flushResolution();
+  expect(create).toHaveBeenCalledTimes(2);
+  expect(create.mock.calls[1][0].url).toBe(field.value);
+});
+it('shows resolver errors as text and explains why static HTML playback needs a server',async()=>{
+  require('../demo');
+  global.fetch=jest.fn(async()=>({ok:false,json:async()=>({error:{message:'上游视频分片已失效'}})})) as jest.Mock;
+  const field=document.querySelector<HTMLInputElement>('#source-url')!;
+  field.value='https://www.iqiyi.com/v_nvusov4apo.html';
+  document.querySelector('#source-form')!.dispatchEvent(new Event('submit',{cancelable:true}));
+  await flushResolution();
+  expect(document.querySelector('#status')!.textContent).toBe('上游视频分片已失效');
+  expect(create).toHaveBeenCalledTimes(1);
+  Object.assign(global,{__CRAYON_PREPARE_ENDPOINT__:''});
+  document.querySelector('#source-form')!.dispatchEvent(new Event('submit',{cancelable:true}));
+  expect(document.querySelector('#status')!.textContent).toContain('Cloudflare 完整部署');
+});

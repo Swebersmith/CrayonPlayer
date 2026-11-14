@@ -1,4 +1,4 @@
-import { demoSource, mediaAddress, playbackEntry, playbackLink } from '../demo-entry';
+import { demoSource, mediaAddress, playbackEntry, playbackLink, pageSource } from '../demo-entry';
 
 it('round-trips signed media URLs without losing their own query and fragment',()=>{
   const source='https://media.example/episode.m3u8?token=a+b/c==&episode=2#track';
@@ -39,4 +39,12 @@ it('automatically embeds homepage links inside frames and honors explicit layout
   expect(playbackEntry('https://player.example/?embed=0',true).embedded).toBe(false);
   expect(playbackEntry('https://player.example/parse?embed=0',true).embedded).toBe(false);
   expect(playbackEntry('https://player.example/?embed=1').embedded).toBe(true);
+});
+
+it('recognizes platform pages and nested parser links without treating unknown HTML as video',()=>{
+  const url='https://v.youku.com/v_show/id_XNjU3OTQ2NDMyOA==.html';
+  expect(pageSource(url)).toBe(url);
+  expect(pageSource('https://svip.qlplayer.cyou/?url='+encodeURIComponent(url))).toBe(url);
+  expect(pageSource('https://media.example/movie.mp4')).toBeUndefined();
+  expect(()=>pageSource('https://other.example/watch.html')).toThrow('暂不支持');
 });
