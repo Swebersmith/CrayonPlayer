@@ -1,4 +1,4 @@
-import { playbackSource } from './src/library-sources';
+import { officialPage, playbackSource } from './src/library-sources';
 
 export const demoSource = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
 
@@ -32,4 +32,20 @@ export function playbackLink(href: string, source: string, hosted: boolean, pars
   page.searchParams.set('url', playbackSource(source, parser || 'native'));
   if (parser) page.searchParams.set('parser', parser);
   return page.href;
+}
+
+/** Recognize official content pages and unwrap QL URLs without treating HTML as media. */
+export function pageSource(value: string): string | undefined {
+  let url = mediaAddress(value);
+  for (let i = 0; i < 4; i++) {
+    const parsed = new URL(url);
+    if (parsed.hostname !== 'svip.qlplayer.cyou') break;
+    const nested = parsed.searchParams.get('url');
+    if (!nested) throw new Error('麒麟播放器链接缺少原片地址。');
+    url = mediaAddress(nested);
+  }
+  const official = officialPage(url);
+  if (official) return official.url;
+  if (/\.html?(?:[?#]|$)/i.test(url)) throw new Error('暂不支持此网页，请使用腾讯、优酷、爱奇艺、芒果TV、B站视频页面或媒体直链。');
+  return undefined;
 }
