@@ -1,5 +1,6 @@
 import { attachPlaybackStats, playbackStatsSetting } from '../src/playback-stats';
 import { fakeArt } from './helpers';
+import { readFileSync } from 'fs';
 
 let art: ReturnType<typeof fakeArt>;
 let dispose: () => void;
@@ -106,4 +107,40 @@ it('persists the display toggle and releases timers, callbacks and elements', ()
   art.video.dispatchEvent(new Event('playing'));
   pending(now, { presentedFrames: 100, width: 3840, height: 2160 } as VideoFrameCallbackMetadata);
   expect(jest.getTimerCount()).toBe(0);
+});
+
+it('uses the top-right safe area and follows controls visibility and locking', () => {
+  art.controls.show = false;
+  dispose = attachPlaybackStats(art);
+  expect(hud().hidden).toBe(true);
+  // jsdom's CSS parser drops top/right calc() values containing CSS variables.
+  const source = readFileSync(require.resolve('../src/playback-stats'), 'utf8');
+  expect(source).toContain('top:calc(var(--art-padding,10px) + var(--crayon-safe-top,0px))');
+  expect(source).toContain('right:calc(var(--art-padding,10px) + var(--crayon-safe-right,0px))');
+  expect(hud().style.bottom).toBe('');
+  art.controls.toggle();
+  expect(hud().hidden).toBe(false);
+  art.controls.toggle();
+  expect(hud().hidden).toBe(true);
+  frame(1); tick(); frame(31); tick();
+  expect(hud().hidden).toBe(true);
+  art.controls.toggle();
+  expect(hud().hidden).toBe(false);
+  expect(hud().textContent).toContain('30 fps');
+  art.isLock = true;
+  art.emit('lock', true);
+  expect(hud().hidden).toBe(true);
+  art.isLock = false;
+  art.emit('lock', false);
+  expect(hud().hidden).toBe(false);
+  const setting = playbackStatsSetting();
+  setting.onSwitch!.call(art, { switch: true } as any, document.createElement('div'), new Event('click'));
+  art.controls.toggle();
+  art.controls.toggle();
+  expect(hud().hidden).toBe(true);
+  const element = hud();
+  dispose();
+  art.controls.toggle();
+  art.controls.toggle();
+  expect(element.isConnected).toBe(false);
 });

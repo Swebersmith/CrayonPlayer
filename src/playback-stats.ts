@@ -29,7 +29,7 @@ export function attachPlaybackStats(art: Artplayer) {
   hud.dataset.crayonPlaybackStats = '';
   hud.setAttribute('aria-label', '视频分辨率和实时帧率');
   hud.title = '当前视频帧尺寸 · 每秒实际呈现帧数（随倍速和丢帧变化）';
-  hud.style.cssText = 'position:absolute;right:calc(12px + var(--crayon-safe-right,0px));bottom:calc(64px + var(--crayon-safe-bottom,0px));max-width:calc(100% - 24px);box-sizing:border-box;padding:4px 7px;border-radius:4px;background:#0009;color:white;font:12px/1.5 sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none;z-index:80';
+  hud.style.cssText = 'position:absolute;top:calc(var(--art-padding,10px) + var(--crayon-safe-top,0px));right:calc(var(--art-padding,10px) + var(--crayon-safe-right,0px));max-width:calc(100% - 2 * var(--art-padding,10px) - var(--crayon-safe-left,0px) - var(--crayon-safe-right,0px));box-sizing:border-box;padding:4px 7px;border-radius:4px;background:#0009;color:white;font:12px/1.5 sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none;z-index:80';
   root.appendChild(hud);
   const frameCallbacks = typeof video.requestVideoFrameCallback === 'function';
   let enabled = false;
@@ -43,6 +43,7 @@ export function attachPlaybackStats(art: Artplayer) {
   let timer: ReturnType<typeof setInterval> | undefined;
 
   const render = () => {
+    hud.hidden = !enabled || !art.controls.show || art.isLock;
     const resolution = width > 0 && height > 0 ? `${width} × ${height}` : '分辨率 —';
     const rate = fps === undefined ? '—' : fps.toFixed(2).replace(/\.00$/, '');
     hud.textContent = `${resolution} · ${rate} fps`;
@@ -96,7 +97,6 @@ export function attachPlaybackStats(art: Artplayer) {
     stop();
     presented = undefined;
     clearSample();
-    hud.hidden = !enabled;
     if (enabled) {
       dimensions();
       if (frameCallbacks) callback = video.requestVideoFrameCallback(frame);
@@ -118,6 +118,8 @@ export function attachPlaybackStats(art: Artplayer) {
   video.addEventListener('resize', dimensions);
   document.addEventListener('visibilitychange', clearSample);
   root.addEventListener(CHANGE_EVENT, change);
+  art.on('control', render);
+  art.on('lock', render);
   toggle(statsPreference());
   return () => {
     disposed = true;
@@ -128,6 +130,8 @@ export function attachPlaybackStats(art: Artplayer) {
     video.removeEventListener('resize', dimensions);
     document.removeEventListener('visibilitychange', clearSample);
     root.removeEventListener(CHANGE_EVENT, change);
+    art.off('control', render);
+    art.off('lock', render);
     hud.remove();
   };
 }
