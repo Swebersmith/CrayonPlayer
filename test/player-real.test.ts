@@ -59,7 +59,7 @@ it('shows explicit switch button states, toggles once, and synchronizes cleared 
   const button = (name: string) => art.setting.find(name).$item.querySelector<HTMLButtonElement>('button[role="switch"]')!;
   try {
     await wait(); await wait();
-    for (const [name, state] of [['blockAds', true], ['crayonSkip', true], ['crayonMiniProgress', false], ['crayonNetworkSpeed', false]] as const) {
+    for (const [name, state] of [['blockAds', true], ['crayonSkip', true], ['crayonMiniProgress', false], ['crayonNetworkSpeed', false], ['crayonPlaybackStats', true]] as const) {
       expect(button(name).textContent).toBe(state ? '已开启' : '已关闭');
       expect(button(name).getAttribute('aria-checked')).toBe(String(state));
       button(name).click(); await wait();

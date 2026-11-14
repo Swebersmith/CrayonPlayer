@@ -9,6 +9,7 @@ import { networkSettings } from './network-settings';
 import { settingSwitchButtons } from './setting-switch';
 import { responsiveSettings } from './responsive';
 import { crayonAutoOrientation } from './orientation';
+import { playbackStatsSetting } from './playback-stats';
 
 export type CrayonPlayerCoreOptions = ConstructorParameters<typeof Artplayer>[0];
 
@@ -33,7 +34,7 @@ export function createCrayonPlayerCore(
     gesture: false,
     fastForward: false,
     miniProgressBar: false,
-    settings: settingSwitchButtons([volumeSetting(), miniProgressSetting(options.miniProgressBar), ...networkSettings(enhancements.network), ...responsiveSettings({ ...options, fullscreenWeb: options.fullscreenWeb ?? true }), ...(options.settings || [])]),
+    settings: settingSwitchButtons([volumeSetting(), miniProgressSetting(options.miniProgressBar), ...networkSettings(enhancements.network), playbackStatsSetting(), ...responsiveSettings({ ...options, fullscreenWeb: options.fullscreenWeb ?? true }), ...(options.settings || [])]),
     plugins: [...(options.plugins || []), ...(options.autoOrientation ? [crayonAutoOrientation] : []), crayonPlayerPlugin(enhancements)],
   });
   if (art.video) configureInlineVideo(art.video);
