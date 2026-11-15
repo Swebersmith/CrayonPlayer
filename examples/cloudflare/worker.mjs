@@ -6,7 +6,7 @@ export default {
   /** @param {Request} request @param {Env} env */
   async fetch(request, env) {
     const incoming = new URL(request.url);
-    if (env.RESOLVER && (incoming.pathname.startsWith('/api/jiexi/') ||
+    if (env.RESOLVER && (incoming.pathname === '/admin' || incoming.pathname.startsWith('/admin/') || incoming.pathname.startsWith('/api/jiexi/') ||
       ['/api/resolve', '/api/player/resolve', '/api/player/search', '/api/player/detail'].includes(incoming.pathname))) {
       return env.RESOLVER.fetch(request);
     }
