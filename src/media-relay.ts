@@ -156,6 +156,7 @@ export async function handleMediaRelay(request: Request, options: MediaRelayOpti
       if (input.relayMode !== undefined && input.relayMode !== 'full' && input.relayMode !== 'playlist') throw new RelayError('INVALID_REQUEST');
       const playlistOnly = input.relayMode === 'playlist';
       let url = publicUrl(input.url).href;
+      let variantMaster: string | undefined;
       const isHls = /\.m3u8(?:[?#]|$)/i.test(url) || /mpegurl/i.test(input.type || '');
       let block = input.blockAds !== false;
       let filter = plainFilter();
@@ -170,6 +171,9 @@ export async function handleMediaRelay(request: Request, options: MediaRelayOpti
           // External audio/subtitle renditions must retain a coordinated timeline.
           if (externalTracks(text)) { block = false; resolved = true; break; }
           if (text.includes('#EXT-X-STREAM-INF:')) {
+            // Keep the full rendition ladder for playback. The first media
+            // playlist still provides the existing preparation/filter metadata.
+            if (!variantMaster && text.split(/\r?\n/).filter(line => line.startsWith('#EXT-X-STREAM-INF:')).length > 1) variantMaster = url;
             const child = text.split(/\r?\n/).map(line=>line.trim()).find(line=>line && !line.startsWith('#'));
             if (!child) throw new RelayError('INVALID_PLAYLIST');
             url = publicUrl(child,url).href;
@@ -180,7 +184,7 @@ export async function handleMediaRelay(request: Request, options: MediaRelayOpti
       const expiry = Math.floor(Date.now()/1000)+lifetime;
       const result = {
         url: playlistOnly && !isHls ? url : await mediaUrl(incoming.origin,{
-          u:url,e:expiry,b:block,m:isHls?'p':'r',...(playlistOnly ? {p:true} : {}),
+          u:variantMaster || url,e:expiry,b:block,m:isHls?'p':'r',...(playlistOnly ? {p:true} : {}),
         },key),
         type: isHls ? 'application/x-mpegURL' : input.type || 'video/mp4',
         filter: {...filter,playlist:''}, expiresAt: expiry * 1000,

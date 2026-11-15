@@ -5,6 +5,7 @@ import { vodAdLoader } from './vod-ad-filter';
 import { prefetchPreference } from './network-settings';
 import { NetworkOptions } from './network-settings';
 import { VodNetwork } from './vod-network';
+import { HLS_CHANGE_EVENT } from './quality';
 import {
   filteredToSourceTime,
   sourceToFilteredTime,
@@ -27,6 +28,7 @@ function resetPlayback(video: HTMLVideoElement) {
   video.hls?.destroy();
   video.vodNetwork?.destroy();
   delete video.hls;
+  video.dispatchEvent(new Event(HLS_CHANGE_EVENT));
   delete video.vodAdFilter;
   delete video.vodPlaybackUrl;
   // Clear the previous episode or explicit casting source before preparation.
@@ -110,6 +112,7 @@ export function attachVodHls(
       : Hls.DefaultConfig.loader,
   });
   video.hls = hls;
+  video.dispatchEvent(new Event(HLS_CHANGE_EVENT));
   video.vodNetwork = network;
   network.attach(hls);
   hls.on(Hls.Events.DESTROYING, () => {
