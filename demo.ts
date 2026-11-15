@@ -14,14 +14,14 @@ let pending: AbortController | undefined;
 let generation = 0;
 const destroyPlayer = () => { player?.destroy(); player = undefined; };
 const showError = (message: string) => { document.body.dataset.entryError = 'true'; status.textContent = message; };
-function loadMedia(url: string, original = url, type = '') {
+function loadMedia(url: string, original = url, type = '', direct = original === url) {
   destroyPlayer();
   player = createCrayonPlayer({
     container: '#player', url, title: '映屿 YINGYU', autoplay: false,
     storageKey: `crayon-player-demo:${original}`,
     // Resolved URLs already use signed same-origin media forwarding. Do not
     // prepare them again or send HTML pages to Crayon's HLS/MP4 loaders.
-    prepareMedia: original === url ? __CRAYON_PREPARE_ENDPOINT__ || undefined : undefined,
+    prepareMedia: direct ? __CRAYON_PREPARE_ENDPOINT__ || undefined : undefined,
     ...(type ? { player: { type } } : {}),
   });
   input.value = original;
@@ -41,13 +41,14 @@ async function resolvePage(source: string, version: number) {
   try {
     const response = await fetch('/api/player/resolve', {
       method: 'POST', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parser: 'ql', url: source }),
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: source }),
     });
     const data = await response.json().catch(() => null);
     if (version !== generation || controller.signal.aborted) return;
     if (!response.ok || !data?.url) throw new Error(data?.error?.message || '解析服务暂时不可用，请稍后重试。');
     const media = mediaAddress(data.url);
-    loadMedia(media, source, data.type === 'm3u8' ? 'm3u8' : 'mp4');
+    loadMedia(media, source, data.type === 'm3u8' ? 'm3u8' : data.type === 'webm' ? 'webm' : 'mp4', data.direct === true);
+    if (data.match) status.textContent = `已匹配 ${data.match.title} · ${data.match.episodeTitle} · ${data.match.sourceName}，点击播放开始观看。`;
   } catch (error) {
     if (version !== generation) return;
     showError(controller.signal.aborted ? '解析超时，请稍后重试。' : (error as Error).message);

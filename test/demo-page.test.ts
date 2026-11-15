@@ -127,6 +127,15 @@ it('ignores a late HTML resolution after the user switches to a direct stream',a
   expect(create).toHaveBeenCalledTimes(2);
   expect(create.mock.calls[1][0].url).toBe(field.value);
 });
+it('prepares a CMS-matched media URL returned for a video webpage',async()=>{
+  const source='https://v.youku.com/v_show/id_a.html';
+  global.fetch=jest.fn(async()=>({ok:true,json:async()=>({url:'https://cdn.demo.site/22.m3u8',type:'m3u8',direct:true,provider:'cms',match:{title:'谷雨',episodeTitle:'第22集',sourceName:'如意'}})})) as jest.Mock;
+  window.history.replaceState(null,'','/parse?url='+encodeURIComponent(source));
+  require('../demo');
+  await flushResolution();
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({url:'https://cdn.demo.site/22.m3u8',prepareMedia:'/api/player/prepare'}));
+  expect(document.querySelector('#status')!.textContent).toContain('谷雨 · 第22集 · 如意');
+});
 it('shows resolver errors as text and explains why static HTML playback needs a server',async()=>{
   require('../demo');
   global.fetch=jest.fn(async()=>({ok:false,json:async()=>({error:{message:'上游视频分片已失效'}})})) as jest.Mock;

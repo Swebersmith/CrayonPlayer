@@ -49,6 +49,8 @@ export function officialPage(value: string): { url: string; platform: VideoPlatf
     const url = new URL(httpSource(value));
     let platform: VideoPlatform | undefined;
     if (url.hostname === 'v.qq.com' && /^\/x\/(?:cover|page)\/.+\.html$/.test(url.pathname)) platform = 'qq';
+    if (url.hostname === 'm.v.qq.com' && url.pathname === '/x/m/play' && (url.searchParams.has('cid') || url.searchParams.has('vid'))) platform = 'qq';
+    if (url.hostname === 'm.youku.com' && /^\/video\/id_[\w=]+\.html$/.test(url.pathname)) { url.hostname = 'v.youku.com'; url.pathname = url.pathname.replace('/video/', '/v_show/'); platform = 'youku'; }
     if (/^(?:(?:www|m)\.)?iqiyi\.com$/.test(url.hostname) && /^\/(?:v|w)_[\w]+\.html$/.test(url.pathname)) platform = 'iqiyi';
     if (url.hostname === 'v.youku.com') {
       if (url.pathname === '/video' && /^[\w=]+$/.test(url.searchParams.get('vid') || '')) {
@@ -56,7 +58,7 @@ export function officialPage(value: string): { url: string; platform: VideoPlatf
       }
       if (/^\/v_show\/id_[\w=]+\.html$/.test(url.pathname)) platform = 'youku';
     }
-    if (/^(?:www|m)\.mgtv\.com$/.test(url.hostname) && /^\/b\/\d+\/\d+\.html$/.test(url.pathname)) platform = 'mgtv';
+    if (/^(?:www|m|w)\.mgtv\.com$/.test(url.hostname) && /^\/b\/\d+\/\d+\.html$/.test(url.pathname)) platform = 'mgtv';
     if (/^(?:(?:www|m)\.)?bilibili\.com$/.test(url.hostname) && /^\/(?:bangumi\/play\/(?:ep|ss)\d+|video\/(?:BV[\w]+|av\d+))\/?$/.test(url.pathname)) platform = 'bilibili';
     if (!platform) return undefined;
     url.protocol = 'https:'; url.hash = '';

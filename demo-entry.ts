@@ -46,6 +46,7 @@ export function pageSource(value: string): string | undefined {
   }
   const official = officialPage(url);
   if (official) return official.url;
+  if (new URL(url).hostname === 'b23.tv') return url;
   if (/\.html?(?:[?#]|$)/i.test(url)) throw new Error('暂不支持此网页，请使用腾讯、优酷、爱奇艺、芒果TV、B站视频页面或媒体直链。');
   return undefined;
 }
