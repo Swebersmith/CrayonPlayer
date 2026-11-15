@@ -6,6 +6,9 @@ const entry = playbackEntry(window.location.href, window.self !== window.top);
 const status = document.querySelector<HTMLDivElement>('#status')!;
 const form = document.querySelector<HTMLFormElement>('#source-form')!;
 const input = document.querySelector<HTMLInputElement>('#source-url')!;
+const results = document.querySelector<HTMLElement>('#catalog-results')!;
+interface CatalogItem { id: string; title: string; year: string; sourceName: string; remarks: string }
+interface CatalogDetail { title: string; lines: { id: string; name: string; episodes: { id: string; title: string; url: string }[] }[] }
 let player: ReturnType<typeof createCrayonPlayer> | undefined;
 let pending: AbortController | undefined;
 let generation = 0;
@@ -50,6 +53,57 @@ async function resolvePage(source: string, version: number) {
     showError(controller.signal.aborted ? '解析超时，请稍后重试。' : (error as Error).message);
   } finally { clearTimeout(timer); if (pending === controller) pending = undefined; }
 }
+function choice(label: string, action: () => void) {
+  const button = document.createElement('button');
+  button.type = 'button'; button.className = 'catalog-choice'; button.textContent = label;
+  button.addEventListener('click', action); return button;
+}
+async function catalogRequest(path: string, version: number) {
+  pending?.abort();
+  const controller = new AbortController(); pending = controller;
+  const timer = setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch(path, { signal: controller.signal, cache: 'no-store' });
+    const data = await response.json();
+    if (version !== generation) return;
+    if (!response.ok) throw new Error(data?.error?.message || '采集服务暂时不可用');
+    return data;
+  } finally { clearTimeout(timer); if (pending === controller) pending = undefined; }
+}
+async function showDetail(id: string, version: number) {
+  try {
+    status.textContent = '正在读取播放线路与分集…';
+    const data = await catalogRequest('/api/player/detail?' + new URLSearchParams({ id }), version) as CatalogDetail | undefined;
+    if (!data) return;
+    results.replaceChildren(); results.hidden = false;
+    const heading = document.createElement('h2'); heading.textContent = data.title; results.append(heading);
+    for (const line of data.lines) {
+      const label = document.createElement('h3'); label.textContent = line.name; results.append(label);
+      const episodes = document.createElement('div'); episodes.className = 'catalog-grid';
+      for (const episode of line.episodes) episodes.append(choice(episode.title, () => {
+        start(episode.url);
+      }));
+      results.append(episodes);
+    }
+    status.textContent = data.lines.length ? '选择分集开始播放。' : '该影片暂无可用播放线路。';
+  } catch (error) { if (version === generation) showError((error as Error).message); }
+}
+async function searchTitle(value: string) {
+  const version = ++generation;
+  results.replaceChildren(); results.hidden = true;
+  document.body.dataset.entryError = 'false';
+  status.textContent = '正在搜索采集源…';
+  try {
+    const data = await catalogRequest('/api/resolve?' + new URLSearchParams({ input: value }), version);
+    if (!data) return;
+    results.hidden = false;
+    for (const item of data.items as CatalogItem[]) results.append(choice(
+      [item.title, item.year, item.sourceName, item.remarks].filter(Boolean).join(' · '),
+      () => { void showDetail(item.id, ++generation); },
+    ));
+    status.textContent = `找到 ${data.items.length} 条结果。${data.warning || ''}`;
+  } catch (error) { if (version === generation) showError((error as Error).message); }
+}
 function start(url: string) {
   const version = ++generation;
   pending?.abort(); pending = undefined;
@@ -61,6 +115,8 @@ function start(url: string) {
 }
 form.addEventListener('submit', event => {
   event.preventDefault();
+  const value = input.value.trim();
+  if (value && !/^[a-z][a-z\d+.-]*:/i.test(value)) { void searchTitle(value); return; }
   try { start(mediaAddress(input.value.trim())); }
   catch (error) { showError((error as Error).message); }
 });

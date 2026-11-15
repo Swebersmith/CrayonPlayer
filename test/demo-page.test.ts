@@ -83,6 +83,24 @@ it.each([false,true])('selects the embedded layout before rendering or loading t
 });
 
 const flushResolution=async()=>{for(let i=0;i<5;i++)await Promise.resolve();};
+it('searches a title, opens source lines and plays a selected episode',async()=>{
+  const media='https://cdn.demo.site/episode.m3u8';
+  global.fetch=jest.fn(async(path:string)=>({ok:true,json:async()=>path.startsWith('/api/resolve')
+    ? {kind:'search',items:[{id:'ruyi:1',title:'测试影片',year:'2026',sourceName:'如意',remarks:'完结'}]}
+    : {title:'测试影片',lines:[{id:'0',name:'HLS',episodes:[{id:'0',title:'第一集',url:media}]}]}})) as jest.Mock;
+  require('../demo');
+  const field=document.querySelector<HTMLInputElement>('#source-url')!;
+  expect(field.type).toBe('text');
+  field.value='测试影片';
+  document.querySelector('#source-form')!.dispatchEvent(new Event('submit',{cancelable:true}));
+  await flushResolution();
+  expect((global.fetch as jest.Mock).mock.calls[0][0]).toContain('/api/resolve?input=');
+  document.querySelector<HTMLButtonElement>('#catalog-results button')!.click();
+  await flushResolution();
+  expect(document.querySelector('#catalog-results h3')!.textContent).toBe('HLS');
+  document.querySelector<HTMLButtonElement>('#catalog-results button')!.click();
+  expect(create.mock.calls[1][0]).toMatchObject({url:media,prepareMedia:'/api/player/prepare'});
+});
 it('resolves an HTML page and loads the returned stream with Crayon instead of an iframe',async()=>{
   const source='https://v.youku.com/v_show/id_XNjU3OTQ2NDMyOA==.html';
   global.fetch=jest.fn(async()=>({ok:true,json:async()=>({url:'https://player.example/api/player/resolved/123.m3u8',type:'m3u8'})})) as jest.Mock;

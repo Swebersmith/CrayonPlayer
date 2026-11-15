@@ -6,6 +6,10 @@ export default {
   /** @param {Request} request @param {Env} env */
   async fetch(request, env) {
     const incoming = new URL(request.url);
+    if (env.RESOLVER && (incoming.pathname.startsWith('/api/jiexi/') ||
+      ['/api/resolve', '/api/player/resolve', '/api/player/search', '/api/player/detail'].includes(incoming.pathname))) {
+      return env.RESOLVER.fetch(request);
+    }
     if (incoming.pathname.startsWith('/auth/') ||
       ['/api/player/search', '/api/player/detail'].includes(incoming.pathname)) {
       return new Response('Not found', { status: 404 });

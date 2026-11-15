@@ -20,6 +20,7 @@
       body{background:radial-gradient(ellipse at 50% 0,#172332 0,#0b1118 65%);color:#f3f6fa;font-family:Inter,"Segoe UI",system-ui,sans-serif}.brand{color:#7f93aa}.badge{border-color:#ffffff17;color:#a4d8c8;background:#a1e6d008}.player-frame{border-color:#ffffff17;border-radius:20px;box-shadow:0 24px 90px #0005}.tip{background:linear-gradient(145deg,#1b2330,#111821);border-color:#ffffff12;border-radius:14px}.tip small,p{color:#91a3b8}.details{border-color:#ffffff10}button:focus-visible{outline:2px solid #9ed9ae;outline-offset:3px}button:active{scale:.96}input{border-color:#ffffff18;background:#0d151e;color:#dbe7ef;border-radius:11px}a,#status{color:#a8c7c2}.foot{color:#637a92}button.load{background:#a1e6d0;color:#10251f;border-radius:11px}@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
       .brand{display:block;width:168px;height:58px;flex-shrink:0;overflow:hidden;border-radius:10px}.brand img{display:block;width:252px;height:126px;max-width:none;transform:translate(-42px,-34px)}
       .site-header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}@media(max-width:460px){.site-header .brand{width:124px;height:44px}.site-header .brand img{width:189px;height:94.5px;transform:translate(-31.5px,-25.5px)}}
+      #catalog-results{margin:20px 0}#catalog-results[hidden]{display:none}.catalog-grid{display:flex;flex-wrap:wrap;gap:8px}.catalog-choice{padding:10px 14px;margin:4px;border:1px solid #ffffff26;border-radius:10px;background:#182330;color:#edf4ed;cursor:pointer;text-align:left;overflow-wrap:anywhere}html[data-embedded=true] #catalog-results{display:none}
     </style>
   </head>
   <body>
@@ -28,11 +29,12 @@
       <div class="heading"><span class="badge">独立 · 可嵌入 · 触屏友好</span></div>
       <div class="player-frame"><div id="player"></div></div>
       <form id="source-form" class="toolbar">
-        <label class="sr-only" for="source-url">视频地址</label>
-        <input id="source-url" type="url" required placeholder="粘贴 MP4、M3U8 或视频网站播放页链接" autocomplete="off" />
+        <label class="sr-only" for="source-url">片名或视频地址</label>
+        <input id="source-url" type="text" required maxlength="8192" placeholder="输入片名，或粘贴视频 URL" autocomplete="off" />
         <button class="load" type="submit">载入视频</button>
       </form>
       <div id="status" role="status">支持媒体直链与腾讯、优酷、爱奇艺、芒果TV、B站视频页面，解析后使用 Crayon 播放。</div>
+      <section id="catalog-results" aria-label="搜索结果与分集" hidden></section>
       <div class="details">
         <section><h2>手指，就是遥控器。</h2><div class="gestures"><div class="tip"><b>左侧 / 右侧双击</b><small>快退 / 快进 10 秒</small></div><div class="tip"><b>长按画面</b><small>2 倍速，松手恢复</small></div><div class="tip"><b>中间双击</b><small>暂停 / 继续播放</small></div><div class="tip"><b>右侧上下滑动</b><small>调节播放音量</small></div></div></section>
         <section><h2>小屏开始，大屏继续。</h2><p>点击控制栏的投屏图标，选择 AirPlay、系统投屏或 Chromecast。设备应在同一网络，电视需要能直接访问视频地址。</p><p>支持画中画、倍速、全屏、断点续播和片头片尾设置。画面左右滑与底部进度条拖动会同步更新进度；设置可开启底边迷你进度条。全屏和网页全屏均保留 映屿控件与手势。</p><p>设置内可点开音量滑块；部分 iPhone 浏览器需用实体音量键。完整部署模式会为本地播放和投屏提供去广告清单。</p></section>
