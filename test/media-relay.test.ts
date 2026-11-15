@@ -33,6 +33,23 @@ const prepare = (body: unknown = {url:rootUrl}, auth = cookie) => handlePlayerMe
 const get = (url: string, init?: RequestInit) => handlePlayerMedia(new Request(url,init),env);
 const grantOf = (url: string) => JSON.parse(Buffer.from(new URL(url).searchParams.get('token')!.split('.')[0],'base64url').toString('utf8'));
 
+it.each(['full', 'playlist'])('preserves multiple qualities through %s relay and still filters each media playlist', async relayMode => {
+  const master = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720\n720/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=10000000,RESOLUTION=3840x2160\n2160/index.m3u8\n';
+  (global.fetch as jest.Mock).mockImplementation(async (url: string) => new Response(url === rootUrl ? master : playlist));
+  const ready = await (await prepare({ url: rootUrl, relayMode }))!.json();
+  expect(grantOf(ready.url).u).toBe(rootUrl);
+  expect(ready.filter.reason).toBe('filtered');
+  const served = await (await get(ready.url))!.text();
+  expect(served).toContain('RESOLUTION=3840x2160');
+  const variants = served.split('\n').filter(line => line.startsWith('https://'));
+  expect(variants).toHaveLength(2);
+  for (const variant of variants) {
+    const content = await (await get(variant))!.text();
+    expect(content).not.toContain('insert-');
+    expect(content).toContain('#EXTINF:');
+  }
+});
+
 it('prepares and serves Ruyi with both verified insertion packages removed for casting', async () => {
   playlist = readFileSync(join(__dirname, '__fixtures__/ruyi/movie.m3u8'), 'utf8');
   const url = 'https://svip.ryiplay18.com/20260531/6798_92c24498/2000k/hls/index.m3u8';

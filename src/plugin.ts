@@ -7,6 +7,7 @@ import { attachProgress } from './progress';
 import { attachNetworkSpeed, NetworkOptions } from './network-settings';
 import { attachResponsiveLayout } from './responsive';
 import { attachPlaybackStats } from './playback-stats';
+import { attachQuality } from './quality';
 
 export interface EnhancementOptions {
   gestures?: GestureOptions | false;
@@ -21,6 +22,7 @@ export function crayonPlayerPlugin(options: EnhancementOptions = {}) {
     const disposeProgress = attachProgress(art);
     const disposeNetwork = attachNetworkSpeed(art, options.network?.showNetworkSpeed);
     const disposeStats = attachPlaybackStats(art);
+    const disposeQuality = attachQuality(art);
     const disposeGestures = options.gestures === false ? undefined : attachGestures(art, options.gestures);
     const disposeCast = options.casting ? attachCasting(art, options.casting) : undefined;
     const disposeResponsive = attachResponsiveLayout(art);
@@ -33,6 +35,7 @@ export function crayonPlayerPlugin(options: EnhancementOptions = {}) {
       disposeProgress();
       disposeNetwork();
       disposeStats();
+      disposeQuality();
       disposeCast?.();
       disposeUi();
     };
