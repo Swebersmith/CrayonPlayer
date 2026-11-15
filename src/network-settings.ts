@@ -74,7 +74,7 @@ export function attachNetworkSpeed(art: Artplayer, fallback = false) {
   // immediately before it, so fullscreen and responsive layouts keep that order.
   art.controls.add({
     name: 'crayonNetworkSpeed', position: 'right', index: 29, html: hud,
-    style: { minWidth: '0', maxWidth: '90px', padding: '0 6px', cursor: 'default', pointerEvents: 'none' },
+    style: { width: '90px', minWidth: '0', maxWidth: '90px', padding: '0 6px', cursor: 'default', pointerEvents: 'none' },
     mounted(element) { control = element; },
   });
   let timer: ReturnType<typeof setInterval> | undefined;

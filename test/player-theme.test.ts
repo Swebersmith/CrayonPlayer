@@ -1,4 +1,4 @@
-import { attachPlayerTheme, morphPanel, cancelPanelMotion } from '../src/player-theme';
+import { announcePanel, attachPlayerTheme, morphPanel, cancelPanelMotion } from '../src/player-theme';
 import { fakeArt } from './helpers';
 
 it('shares the settings translucent mask across panels and keeps HUDs transparent', () => {
@@ -92,4 +92,49 @@ it('honors reduced motion and changes panel visibility without animations',async
     await morphPanel(root,panel,undefined,false);expect(panel.hidden).toBe(true);
     expect(HTMLElement.prototype.animate).not.toHaveBeenCalled();
   }finally{window.matchMedia=oldMatch;HTMLElement.prototype.animate=oldAnimate;}
+});
+
+it('keeps closed settings still when another control panel opens or repeats a close event', () => {
+  const art = fakeArt();
+  const root = art.template.$player;
+  const settings = document.createElement('section'); settings.className = 'art-settings';
+  const episodes = document.createElement('section');
+  root.append(settings, episodes);
+  const oldAnimate = HTMLElement.prototype.animate;
+  const animate = jest.fn(() => ({ finished: Promise.resolve(), cancel: jest.fn() }));
+  HTMLElement.prototype.animate = animate as any;
+  const dispose = attachPlayerTheme(art);
+  try {
+    announcePanel(art, episodes);
+    art.emit('setting', false);
+    art.emit('setting', false);
+    expect(settings.hidden).toBe(true);
+    expect(animate).not.toHaveBeenCalled();
+    expect(root.querySelector('.crayon-morph-surface')).toBeNull();
+  } finally { dispose(); HTMLElement.prototype.animate = oldAnimate; root.remove(); }
+});
+
+it('dismisses open settings immediately when switching to another panel', () => {
+  const art = fakeArt();
+  const root = art.template.$player;
+  const settings = document.createElement('section'); settings.className = 'art-settings';
+  const sources = document.createElement('section');
+  const button = document.createElement('button'); button.className = 'art-control-setting';
+  button.getBoundingClientRect = () => ({ x: 300, y: 180, width: 44, height: 44 } as DOMRect);
+  root.append(settings, sources, button);
+  Object.assign(art.setting, { resize: jest.fn() });
+  const oldAnimate = HTMLElement.prototype.animate;
+  const animate = jest.fn(() => ({ finished: new Promise(() => {}), cancel: jest.fn() }));
+  HTMLElement.prototype.animate = animate as any;
+  const dispose = attachPlayerTheme(art);
+  try {
+    art.setting.show = true; art.emit('setting', true);
+    expect(root.querySelector('.crayon-morph-surface')).not.toBeNull();
+    animate.mockClear();
+    announcePanel(art, sources); art.emit('setting', false);
+    expect(art.setting.show).toBe(false);
+    expect(settings.hidden).toBe(true);
+    expect(root.querySelector('.crayon-morph-surface')).toBeNull();
+    expect(animate).not.toHaveBeenCalled();
+  } finally { dispose(); HTMLElement.prototype.animate = oldAnimate; root.remove(); }
 });

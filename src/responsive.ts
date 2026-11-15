@@ -73,7 +73,7 @@ const styles = `
 .art-video-player[data-crayon-compact=true] .art-control-time{display:none!important}
 .art-video-player[data-crayon-compact=true][data-crayon-more=true] .art-control-volume,.art-video-player[data-crayon-compact=true][data-crayon-more=true] .art-control-pip,.art-video-player[data-crayon-compact=true][data-crayon-more=true] .art-control-fullscreenWeb,.art-video-player[data-crayon-compact=true][data-crayon-more=true] .art-control-screenshot,.art-video-player[data-crayon-compact=true][data-crayon-more=true] .art-control-airplay{display:none!important}
 .art-video-player[data-crayon-compact=true] .art-control .art-icon svg{width:100%;height:100%}
-.art-video-player[data-crayon-compact=true] .art-control-crayonNetworkSpeed{max-width:80px!important;padding:0 4px!important}
+.art-video-player[data-crayon-compact=true] .art-control-crayonNetworkSpeed{width:80px!important;max-width:80px!important;padding:0 4px!important}
 .art-video-player[data-crayon-compact=true] [data-crayon-network-speed]{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px!important}
 .art-video-player[data-crayon-compact=true] .art-control-nextEpisode{font-size:12px;padding:0 4px}
 .art-video-player[data-crayon-compact=true] .art-control[class*="hint--"]:before,.art-video-player[data-crayon-compact=true] .art-control[class*="hint--"]:after{display:none}
@@ -87,7 +87,7 @@ const styles = `
 .art-video-player[data-crayon-compact=true][data-crayon-more=true] [data-name="crayonCompactPip"],.art-video-player[data-crayon-compact=true][data-crayon-more=true] [data-name="crayonCompactFullscreenWeb"],.art-video-player[data-crayon-compact=true][data-crayon-more=true] [data-name="crayonCompactScreenshot"]{display:flex}
 .art-video-player[data-crayon-compact=true][data-crayon-native-airplay=true] [data-name="crayonCompactAirplay"]{display:flex}
 .art-video-player[data-crayon-tiny=true]{--art-control-height:40px;--art-control-icon-size:26px;--art-padding:6px;--art-state-size:44px}
-.art-video-player[data-crayon-tiny=true] .art-control-crayonNetworkSpeed{max-width:58px!important;padding:0 2px!important}
+.art-video-player[data-crayon-tiny=true] .art-control-crayonNetworkSpeed{width:58px!important;max-width:58px!important;padding:0 2px!important}
 .art-video-player[data-crayon-tiny=true][data-crayon-more=true] .art-control-crayonCast{display:none!important}
 .art-video-player[data-crayon-tiny=true][data-crayon-cast=true] [data-name="crayonCompactCast"]{display:flex}
 .art-video-player[data-crayon-wrap=true] .art-controls{height:auto;min-height:var(--art-control-height);flex-wrap:wrap}
@@ -130,9 +130,10 @@ export function attachResponsiveLayout(art: Artplayer) {
     if (controls) {
       const groups = controls.querySelectorAll<HTMLElement>('.art-controls-left,.art-controls-right');
       const total = Array.from(groups).reduce((sum, group) => sum + Array.from(group.children).reduce((size, child) => size + (child as HTMLElement).offsetWidth, 0), 0);
+      const gap = (parseFloat(getComputedStyle(controls).columnGap) || 0) * Math.max(0, groups.length - 1);
       const bottom = getComputedStyle(art.template.$bottom);
       const available = width - (parseFloat(bottom.paddingLeft) || 0) - (parseFloat(bottom.paddingRight) || 0);
-      root.dataset.crayonWrap = String(total > available + 1);
+      root.dataset.crayonWrap = String(total + gap > available + 1);
     }
     root.style.setProperty('--crayon-player-height', `${height}px`);
     root.style.setProperty('--crayon-controls-height', `${controls?.offsetHeight || (compact ? width < 320 ? 40 : 44 : 46)}px`);

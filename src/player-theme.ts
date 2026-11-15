@@ -2,7 +2,11 @@ import type Artplayer from 'artplayer';
 
 export const PANEL_OPEN = 'crayon-panel-open';
 export function announcePanel(art: Artplayer, panel: HTMLElement) {
-  if (!panel.classList.contains('art-settings')) art.setting.show = false;
+  if (!panel.classList.contains('art-settings')) {
+    const settings = art.template.$player.querySelector<HTMLElement>('.art-settings');
+    if (settings) { cancelPanelMotion(settings); settings.hidden = true; }
+    if (art.setting.show) art.setting.show = false;
+  }
   art.template.$player.dispatchEvent(new CustomEvent(PANEL_OPEN, { detail: panel }));
 }
 
@@ -16,6 +20,7 @@ export function animateContent(element: HTMLElement) {
 
 /** A single surface travels from the pressed button into the panel and back. */
 export async function morphPanel(root: HTMLElement, panel: HTMLElement, origin: DOMRect | undefined, visible: boolean): Promise<boolean> {
+  if (!visible && panel.hidden) { cancelPanelMotion(panel); return true; }
   const previous = transitions.get(panel);
   const version = (previous?.version || 0) + 1;
   previous?.animations.forEach(animation => animation.cancel()); previous?.ghost?.remove();
@@ -138,7 +143,10 @@ export function attachPlayerTheme(art: Artplayer) {
   observer?.observe(root,{subtree:true,attributes:true,attributeFilter:['hidden','class'],childList:true});
   root.addEventListener('pointerover',track); root.addEventListener('focusin',track); root.addEventListener('pointerleave',hide); root.addEventListener('pointerdown',press,true);
   art.on('control',hide); art.on('play',hide);
+  let settingVisible = art.setting.show;
   const setting = (visible: boolean) => {
+    if (visible === settingVisible) return;
+    settingVisible = visible;
     const panel = root.querySelector<HTMLElement>('.art-settings');
     if (!panel) return;
     if (visible) {

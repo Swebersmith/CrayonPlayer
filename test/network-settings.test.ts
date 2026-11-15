@@ -28,6 +28,7 @@ it('measures actual bytes per second, becomes idle, and resets on source changes
   const art = fakeArt();
   art.video.vodNetwork = { bytes: 0 } as any;
   const dispose = attachNetworkSpeed(art, true);
+  expect((art.controls.add as jest.Mock).mock.calls[0][0].style.width).toBe('90px');
   const hud = art.template.$player.querySelector<HTMLElement>('[data-crayon-network-speed]')!;
   expect(hud.hidden).toBe(false);
   art.video.vodNetwork!.bytes = 2048;
