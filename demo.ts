@@ -1,4 +1,5 @@
 import { createCrayonPlayer } from './src/index';
+import type { PlaybackSource } from './src/index';
 import { mediaAddress, pageSource, playbackEntry } from './demo-entry';
 
 declare const __CRAYON_PREPARE_ENDPOINT__: string;
@@ -14,7 +15,7 @@ let pending: AbortController | undefined;
 let generation = 0;
 const destroyPlayer = () => { player?.destroy(); player = undefined; };
 const showError = (message: string) => { document.body.dataset.entryError = 'true'; status.textContent = message; };
-function loadMedia(url: string, original = url, type = '', direct = original === url) {
+function loadMedia(url: string, original = url, type = '', direct = original === url, sources?: PlaybackSource[]) {
   destroyPlayer();
   player = createCrayonPlayer({
     container: '#player', url, title: '映屿 YINGYU', autoplay: false,
@@ -22,6 +23,7 @@ function loadMedia(url: string, original = url, type = '', direct = original ===
     // Resolved URLs already use signed same-origin media forwarding. Do not
     // prepare them again or send HTML pages to Crayon's HLS/MP4 loaders.
     prepareMedia: direct ? __CRAYON_PREPARE_ENDPOINT__ || undefined : undefined,
+    ...(sources?.length ? { sources, onSourceChange: (source: PlaybackSource) => { status.textContent = '当前线路 ' + source.name; } } : {}),
     ...(type ? { player: { type } } : {}),
   });
   input.value = original;
@@ -35,9 +37,9 @@ async function resolvePage(source: string, version: number) {
   input.value = source;
   if (!__CRAYON_PREPARE_ENDPOINT__) { showError('网页链接解析需要配套服务，请使用 Cloudflare 完整部署，或输入 MP4 / M3U8 直链。'); return; }
   const controller = new AbortController(); pending = controller;
-  const timer = setTimeout(() => controller.abort(), 75000);
+  const timer = setTimeout(() => controller.abort(), 120000);
   // The embedded /parse entry hides page chrome; show progress in its status area.
-  showError('正在解析视频页面，请稍候…');
+  showError('正在解析视频页面并比较片源清晰度与连接速度…');
   try {
     const response = await fetch('/api/player/resolve', {
       method: 'POST', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
@@ -47,7 +49,7 @@ async function resolvePage(source: string, version: number) {
     if (version !== generation || controller.signal.aborted) return;
     if (!response.ok || !data?.url) throw new Error(data?.error?.message || '解析服务暂时不可用，请稍后重试。');
     const media = mediaAddress(data.url);
-    loadMedia(media, source, data.type === 'm3u8' ? 'm3u8' : data.type === 'webm' ? 'webm' : 'mp4', data.direct === true);
+    loadMedia(media, source, data.type === 'm3u8' ? 'm3u8' : data.type === 'webm' ? 'webm' : 'mp4', data.direct === true, Array.isArray(data.routes) ? data.routes : undefined);
     if (data.match) status.textContent = `已匹配 ${data.match.title} · ${data.match.episodeTitle} · ${data.match.sourceName}，点击播放开始观看。`;
   } catch (error) {
     if (version !== generation) return;

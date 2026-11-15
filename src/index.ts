@@ -9,6 +9,8 @@ import { attachVodFile, attachVodHls, attachVodRecovery, vodFilteredTime, vodSou
 import { sourceToFilteredTime } from './vod-segment-filter';
 import { PLAYBACK_POLICY_CHANGE, relayModePreference, saveRelayModePreference, saveServerRelayPreference, serverRelayPreference } from './relay-settings';
 import { attachVideoLibrary, VideoLibraryOptions, VideoLibraryController } from './library';
+import { attachSourceSelector, PlaybackSource } from './source-selector';
+export type { PlaybackSource } from './source-selector';
 
 export type { CastOptions, CastSource, PreparedCastSource } from './casting';
 export { attachCasting, prepareCastSdk } from './casting';
@@ -59,6 +61,9 @@ export interface CrayonPlayerOptions {
   prepareMedia?: string | MediaPreparer;
   /** Optional search, episodes and parser controls inside the player's fullscreen root. */
   library?: VideoLibraryOptions;
+  /** Ordered playable source alternatives for the same episode. */
+  sources?: PlaybackSource[];
+  onSourceChange?: (source: PlaybackSource) => void;
 }
 
 /** Standalone VOD player. Host applications can also install just crayonPlayerPlugin. */
@@ -277,6 +282,16 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): CrayonPlayer {
   });
   art.title = options.title || '';
   const player = art as CrayonPlayer;
+  if (options.sources?.length) attachSourceSelector(art, options.sources, source => {
+    save();
+    resume = resume ?? vodSourceTime(art.video);
+    resumePlaying = resumePlaying || art.playing;
+    art.pause();
+    art.option.url = source.url;
+    art.option.type = source.type || '';
+    restartPlayback();
+    options.onSourceChange?.(source);
+  });
   if (options.library) player.library = attachVideoLibrary(art, options.library, {
     initialUrl: options.url,
     suspend: () => {

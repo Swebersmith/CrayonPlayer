@@ -136,6 +136,16 @@ it('prepares a CMS-matched media URL returned for a video webpage',async()=>{
   expect(create).toHaveBeenCalledWith(expect.objectContaining({url:'https://cdn.demo.site/22.m3u8',prepareMedia:'/api/player/prepare'}));
   expect(document.querySelector('#status')!.textContent).toContain('谷雨 · 第22集 · 如意');
 });
+it('passes ranked playback routes to the player source selector',async()=>{
+  const routes=[{id:'hd',name:'如意 · 1920×1080 · 80ms',url:'https://player.example/hd.m3u8',type:'m3u8'},{id:'sd',name:'暴风 · 1280×720 · 30ms',url:'https://player.example/sd.m3u8',type:'m3u8'}];
+  global.fetch=jest.fn(async()=>({ok:true,json:async()=>({url:routes[0].url,type:'m3u8',direct:false,provider:'cms',routes})})) as jest.Mock;
+  window.history.replaceState(null,'','/parse?url='+encodeURIComponent('https://v.youku.com/v_show/id_a.html'));
+  require('../demo');
+  await flushResolution();
+  expect(create.mock.calls[0][0].sources).toEqual(routes);
+  create.mock.calls[0][0].onSourceChange(routes[1]);
+  expect(document.querySelector('#status')!.textContent).toContain(routes[1].name);
+});
 it('shows resolver errors as text and explains why static HTML playback needs a server',async()=>{
   require('../demo');
   global.fetch=jest.fn(async()=>({ok:false,json:async()=>({error:{message:'上游视频分片已失效'}})})) as jest.Mock;
