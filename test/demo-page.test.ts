@@ -95,10 +95,10 @@ it('searches a title, opens source lines and plays a selected episode',async()=>
   document.querySelector('#source-form')!.dispatchEvent(new Event('submit',{cancelable:true}));
   await flushResolution();
   expect((global.fetch as jest.Mock).mock.calls[0][0]).toContain('/api/resolve?input=');
-  document.querySelector<HTMLButtonElement>('#catalog-results button')!.click();
+  document.querySelector<HTMLButtonElement>('#catalog-results .catalog-card')!.click();
   await flushResolution();
   expect(document.querySelector('#catalog-results h3')!.textContent).toBe('HLS');
-  document.querySelector<HTMLButtonElement>('#catalog-results button')!.click();
+  document.querySelector<HTMLButtonElement>('#catalog-results [data-catalog-episode]')!.click();
   expect(create.mock.calls[1][0]).toMatchObject({url:media,prepareMedia:'/api/player/prepare'});
 });
 it('resolves an HTML page and loads the returned stream with Crayon instead of an iframe',async()=>{

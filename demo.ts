@@ -1,6 +1,8 @@
 import { createCrayonPlayer } from './src/index';
 import type { EpisodePlayback, PlaybackEpisode, PlaybackSource } from './src/index';
 import { mediaAddress, pageSource, playbackEntry } from './demo-entry';
+import { attachSiteTheme } from './demo-theme';
+import { catalogCard, catalogPoster, groupCatalogItems, CatalogGroup, CatalogItem } from './demo-catalog';
 
 declare const __CRAYON_PREPARE_ENDPOINT__: string;
 const entry = playbackEntry(window.location.href, window.self !== window.top);
@@ -8,8 +10,7 @@ const status = document.querySelector<HTMLDivElement>('#status')!;
 const form = document.querySelector<HTMLFormElement>('#source-form')!;
 const input = document.querySelector<HTMLInputElement>('#source-url')!;
 const results = document.querySelector<HTMLElement>('#catalog-results')!;
-interface CatalogItem { id: string; title: string; year: string; sourceName: string; remarks: string }
-interface CatalogDetail { title: string; lines: { id: string; name: string; episodes: { id: string; title: string; url: string; number?: number }[] }[] }
+interface CatalogDetail extends CatalogItem { lines: { id: string; name: string; episodes: { id: string; title: string; url: string; number?: number }[] }[] }
 type EpisodeRequest = { url: string } | { id: string };
 interface ResolvedPlayback {
   url: string; type?: string; direct?: boolean; routes?: PlaybackSource[]; episodes?: PlaybackEpisode[]; selectedEpisodeNumber?: number;
@@ -19,12 +20,15 @@ interface EpisodeContext { request: EpisodeRequest; original: string; data: Reso
 let player: ReturnType<typeof createCrayonPlayer> | undefined;
 let pending: AbortController | undefined;
 let generation = 0;
+let searchGroups: CatalogGroup[] = [];
+let searchSummary = '';
+const disposeTheme = attachSiteTheme();
 const destroyPlayer = () => { player?.destroy(); player = undefined; };
 const showError = (message: string) => { document.body.dataset.entryError = 'true'; status.textContent = message; };
 function loadMedia(url: string, original = url, type = '', direct = original === url, sources?: PlaybackSource[], context?: EpisodeContext) {
   destroyPlayer();
   player = createCrayonPlayer({
-    container: '#player', url, title: context?.data.match?.title || '映屿 YINGYU', autoplay: false,
+    container: '#player', url, title: context?.data.match?.title || 'crayonplayer', autoplay: false,
     storageKey: `crayon-player-demo:${original}:${context?.data.selectedEpisodeNumber ?? ''}`,
     // Resolved URLs already use signed same-origin media forwarding. Do not
     // prepare them again or send HTML pages to Crayon's HLS/MP4 loaders.
@@ -39,8 +43,8 @@ function loadMedia(url: string, original = url, type = '', direct = original ===
   input.value = original;
   document.body.dataset.entryError = 'false';
   status.textContent = original === url
-    ? '支持 MP4、M3U8 直链及腾讯、优酷、爱奇艺、芒果TV、B站视频页面。'
-    : '解析成功，已交给 Crayon 播放。点击画面中的播放按钮开始观看。';
+    ? '播放器已就绪。'
+    : '解析成功，点击播放开始观看。';
 }
 async function requestPlayback(payload: EpisodeRequest & { episode?: number; episodeNumber?: number }, version: number) {
   pending?.abort();
@@ -118,39 +122,106 @@ async function catalogRequest(path: string, version: number) {
     return data;
   } finally { clearTimeout(timer); if (pending === controller) pending = undefined; }
 }
-async function showDetail(id: string, version: number) {
+function renderSearchResults() {
+  results.replaceChildren(); results.hidden = false;
+  status.textContent = searchSummary;
+  const heading = document.createElement('div'); heading.className = 'catalog-heading';
+  const title = document.createElement('h2'); title.textContent = '搜索结果';
+  const count = document.createElement('span'); count.textContent = searchSummary;
+  heading.append(title, count); results.append(heading);
+  if (!searchGroups.length) {
+    const empty = document.createElement('p'); empty.className = 'catalog-empty'; empty.textContent = '没有找到相关影片，试试其他片名。'; results.append(empty);
+    return;
+  }
+  const grid = document.createElement('div'); grid.className = 'catalog-cards';
+  searchGroups.forEach((group, index) => grid.append(catalogCard(group, index, () => { void showDetail(group.items[0].id, ++generation, group); })));
+  results.append(grid);
+}
+function renderDetail(data: CatalogDetail, id: string, group: CatalogGroup) {
+  results.replaceChildren(); results.hidden = false;
+  const back = choice('← 返回搜索结果', () => { generation++; pending?.abort(); pending = undefined; renderSearchResults(); }); back.className = 'catalog-back'; results.append(back);
+  const detail = document.createElement('div'); detail.className = 'catalog-detail';
+  const summary = document.createElement('div'); summary.className = 'catalog-summary';
+  const item = { ...group.item, ...data, poster: data.poster || group.item.poster };
+  summary.append(catalogPoster(item));
+  const copy = document.createElement('div'); copy.className = 'catalog-summary-copy';
+  const heading = document.createElement('h2'); heading.textContent = data.title;
+  const meta = document.createElement('p'); meta.className = 'catalog-summary-meta'; meta.textContent = [data.year || group.item.year, data.type, data.language, data.remarks].filter(Boolean).join(' · ');
+  copy.append(heading, meta);
+  if (data.description || group.item.description) {
+    const description = document.createElement('p'); description.className = 'catalog-summary-description'; description.textContent = data.description || group.item.description || ''; copy.append(description);
+  }
+  summary.append(copy); detail.append(summary);
+  if (group.items.length > 1) {
+    const sources = document.createElement('div'); sources.className = 'catalog-sources'; sources.setAttribute('aria-label', '选择采集源');
+    for (const source of group.items) {
+      const button = choice([source.sourceName, source.remarks].filter(Boolean).join(' · '), () => { if (source.id !== id) void showDetail(source.id, ++generation, group); });
+      button.className = 'catalog-source'; button.setAttribute('aria-pressed', String(source.id === id)); sources.append(button);
+    }
+    detail.append(sources);
+  }
+  const lines = document.createElement('div'); lines.className = 'catalog-lines';
+  const episodes = document.createElement('div');
+  const renderLine = (lineIndex: number, page = 0) => {
+    const line = data.lines[lineIndex];
+    episodes.replaceChildren();
+    lines.querySelectorAll('button').forEach((button, index) => button.setAttribute('aria-pressed', String(index === lineIndex)));
+    if (!line) return;
+    const header = document.createElement('div'); header.className = 'catalog-episode-heading';
+    const label = document.createElement('h3'); label.textContent = line.name; header.append(label);
+    if (line.episodes.length > 100) {
+      const controls = document.createElement('div'); controls.className = 'catalog-page-controls';
+      const previous = choice('上一页', () => renderLine(lineIndex, page - 1)); previous.disabled = page === 0;
+      const range = document.createElement('select'); range.setAttribute('aria-label', '集数范围');
+      for (let offset = 0; offset < line.episodes.length; offset += 100) {
+        const option = document.createElement('option'); option.value = String(offset / 100); option.textContent = (offset + 1) + '–' + Math.min(offset + 100, line.episodes.length); range.append(option);
+      }
+      range.value = String(page); range.addEventListener('change', () => renderLine(lineIndex, Number(range.value)));
+      const next = choice('下一页', () => renderLine(lineIndex, page + 1)); next.disabled = (page + 1) * 100 >= line.episodes.length;
+      controls.append(previous, range, next); header.append(controls);
+    }
+    const grid = document.createElement('div'); grid.className = 'catalog-grid';
+    for (const episode of line.episodes.slice(page * 100, page * 100 + 100)) {
+      const button = choice(episode.title, () => {
+        if (episode.number) void playCatalogEpisode(id, episode.number, data.title);
+        else start(episode.url);
+      });
+      button.dataset.catalogEpisode = ''; grid.append(button);
+    }
+    episodes.append(header, grid);
+  };
+  if (data.lines.length > 1) data.lines.forEach((line, index) => {
+    const button = choice(line.name, () => renderLine(index)); button.className = 'catalog-line'; lines.append(button);
+  });
+  detail.append(lines, episodes); results.append(detail); renderLine(0);
+}
+async function showDetail(id: string, version: number, group: CatalogGroup) {
   try {
     status.textContent = '正在读取播放线路与分集…';
     const data = await catalogRequest('/api/player/detail?' + new URLSearchParams({ id }), version) as CatalogDetail | undefined;
     if (!data) return;
-    results.replaceChildren(); results.hidden = false;
-    const heading = document.createElement('h2'); heading.textContent = data.title; results.append(heading);
-    for (const line of data.lines) {
-      const label = document.createElement('h3'); label.textContent = line.name; results.append(label);
-      const episodes = document.createElement('div'); episodes.className = 'catalog-grid';
-      for (const episode of line.episodes) episodes.append(choice(episode.title, () => {
-        if (episode.number) void playCatalogEpisode(id, episode.number, data.title);
-        else start(episode.url);
-      }));
-      results.append(episodes);
-    }
+    renderDetail(data, id, group);
     status.textContent = data.lines.length ? '选择分集开始播放。' : '该影片暂无可用播放线路。';
   } catch (error) { if (version === generation) showError((error as Error).message); }
 }
 async function searchTitle(value: string) {
   const version = ++generation;
   results.replaceChildren(); results.hidden = true;
+  searchGroups = [];
   document.body.dataset.entryError = 'false';
   status.textContent = '正在搜索采集源…';
   try {
     const data = await catalogRequest('/api/resolve?' + new URLSearchParams({ input: value }), version);
     if (!data) return;
-    results.hidden = false;
-    for (const item of data.items as CatalogItem[]) results.append(choice(
-      [item.title, item.year, item.sourceName, item.remarks].filter(Boolean).join(' · '),
-      () => { void showDetail(item.id, ++generation); },
-    ));
-    status.textContent = `找到 ${data.items.length} 条结果。${data.warning || ''}`;
+    searchGroups = groupCatalogItems(Array.isArray(data.items) ? data.items : []);
+    const queryKey = value.normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
+    const exactMatch = (group: CatalogGroup) => group.key.split('|')[0] === queryKey;
+    searchGroups.sort((a, b) => Number(exactMatch(b)) - Number(exactMatch(a)));
+    const providers = new Set(searchGroups.flatMap(group => group.items.map(item => item.sourceId || item.id.split(':')[0])));
+    searchSummary = searchGroups.length + ' 部影片 · ' + providers.size + ' 个采集源';
+    renderSearchResults();
+    status.textContent = `找到 ${searchGroups.length} 部影片。${data.warning || ''}`;
+    results.scrollIntoView?.({ block: 'start', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   } catch (error) { if (version === generation) showError((error as Error).message); }
 }
 function start(url: string) {
@@ -170,6 +241,9 @@ form.addEventListener('submit', event => {
   catch (error) { showError((error as Error).message); }
 });
 if (entry.error) showError(entry.error);
-else start(entry.url);
-window.addEventListener('pagehide', () => { generation++; pending?.abort(); destroyPlayer(); });
+else {
+  start(entry.url);
+  if (!new URLSearchParams(window.location.search).has('url')) input.value = '';
+}
+window.addEventListener('pagehide', () => { generation++; pending?.abort(); destroyPlayer(); disposeTheme(); });
 window.addEventListener('pageshow', event => { if (event.persisted) window.location.reload(); });
