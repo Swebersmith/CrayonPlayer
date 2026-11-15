@@ -1,6 +1,37 @@
 import { attachPlayerTheme, morphPanel, cancelPanelMotion } from '../src/player-theme';
 import { fakeArt } from './helpers';
 
+it('makes panels, HUDs and control masks transparent while retaining readable text and interaction', () => {
+  const art = fakeArt();
+  const panel = document.createElement('section');
+  panel.className = 'art-settings';
+  const cast = document.createElement('section');
+  cast.dataset.crayonCastPanel = '';
+  const mask = document.createElement('div');
+  mask.className = 'art-bottom';
+  const hud = document.createElement('div');
+  hud.dataset.crayonPlaybackStats = '';
+  const selector = document.createElement('div');
+  selector.className = 'art-selector-list';
+  art.template.$player.append(panel, cast, mask, hud, selector);
+  const dispose = attachPlayerTheme(art);
+  try {
+    for (const element of [panel, cast, mask, hud, selector]) {
+      const style = getComputedStyle(element);
+      expect(style.backgroundColor).toBe('transparent');
+      expect(style.boxShadow).toBe('none');
+      expect(style.textShadow).toContain('0 1px 3px');
+      expect(style.pointerEvents).not.toBe('none');
+    }
+    expect(art.template.$player.querySelector('style')!.textContent).toContain('backdrop-filter:none!important');
+    const rules = Array.from(art.template.$player.querySelector('style')!.sheet!.cssRules) as CSSStyleRule[];
+    const surface = rules.find(rule => rule.selectorText?.includes('[data-crayon-cast-panel]') && rule.selectorText.includes('.art-mask'))!;
+    expect(surface.style.getPropertyPriority('background')).toBe('important');
+    expect(surface.style.getPropertyPriority('box-shadow')).toBe('important');
+    expect(panel.hidden).toBe(true);
+  } finally { dispose(); art.template.$player.remove(); }
+});
+
 it('measures the first settings animation after revealing and resizing the panel', async () => {
   const art = fakeArt();
   const root = art.template.$player;
