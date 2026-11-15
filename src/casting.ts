@@ -3,7 +3,7 @@ import type Artplayer from 'artplayer';
 import { setHlsAlternative } from './vod-playback';
 import type { VodAdFilterResult } from './vod-segment-filter';
 import { PLAYBACK_POLICY_CHANGE } from './relay-settings';
-import { cancelPanelMotion, morphPanel } from './player-theme';
+import { announcePanel, cancelPanelMotion, morphPanel, PANEL_OPEN } from './player-theme';
 
 export interface CastSource { url: string; title?: string; type?: string; currentTime?: number }
 export interface PreparedCastSource extends CastSource {
@@ -227,6 +227,7 @@ export function attachCasting(art: Artplayer, options: CastOptions) {
     if (options.getHint) hint.textContent = options.getHint();
     warm();
     const opening = trigger.getAttribute('aria-expanded') !== 'true';
+    if (opening) announcePanel(art, panel);
     trigger.setAttribute('aria-expanded', String(opening));
     void morphPanel(art.template.$player, panel, trigger.getBoundingClientRect(), opening);
     if (opening) native.focus();
@@ -236,10 +237,12 @@ export function attachCasting(art: Artplayer, options: CastOptions) {
   const outside = (event: Event) => { if (!panel.contains(event.target as Node) && !trigger.contains(event.target as Node)) close(); };
   const sourceChanged = () => { generation++; prepared = undefined; preparing = undefined; close(); };
   const control = (visible: boolean) => { if (!visible) close(); };
+  const otherPanel = (event: Event) => { if ((event as CustomEvent).detail !== panel) close(); };
   document.addEventListener('keydown', escape);
   document.addEventListener('click', outside);
   video.addEventListener('loadstart', sourceChanged);
   art.template.$player.addEventListener(PLAYBACK_POLICY_CHANGE, sourceChanged);
+  art.template.$player.addEventListener(PANEL_OPEN, otherPanel);
   art.on('control', control);
   art.on('video:canplay', warm);
   return () => {
@@ -251,6 +254,7 @@ export function attachCasting(art: Artplayer, options: CastOptions) {
     document.removeEventListener('click', outside);
     video.removeEventListener('loadstart', sourceChanged);
     art.template.$player.removeEventListener(PLAYBACK_POLICY_CHANGE, sourceChanged);
+    art.template.$player.removeEventListener(PANEL_OPEN, otherPanel);
     art.off('control', control);
     art.off('video:canplay', warm);
     cancelPanelMotion(panel); panel.remove();

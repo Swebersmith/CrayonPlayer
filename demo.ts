@@ -1,5 +1,5 @@
 import { createCrayonPlayer } from './src/index';
-import type { PlaybackSource } from './src/index';
+import type { EpisodePlayback, PlaybackEpisode, PlaybackSource } from './src/index';
 import { mediaAddress, pageSource, playbackEntry } from './demo-entry';
 
 declare const __CRAYON_PREPARE_ENDPOINT__: string;
@@ -9,21 +9,31 @@ const form = document.querySelector<HTMLFormElement>('#source-form')!;
 const input = document.querySelector<HTMLInputElement>('#source-url')!;
 const results = document.querySelector<HTMLElement>('#catalog-results')!;
 interface CatalogItem { id: string; title: string; year: string; sourceName: string; remarks: string }
-interface CatalogDetail { title: string; lines: { id: string; name: string; episodes: { id: string; title: string; url: string }[] }[] }
+interface CatalogDetail { title: string; lines: { id: string; name: string; episodes: { id: string; title: string; url: string; number?: number }[] }[] }
+type EpisodeRequest = { url: string } | { id: string };
+interface ResolvedPlayback {
+  url: string; type?: string; direct?: boolean; routes?: PlaybackSource[]; episodes?: PlaybackEpisode[]; selectedEpisodeNumber?: number;
+  match?: { title: string; episodeTitle: string; sourceName: string };
+}
+interface EpisodeContext { request: EpisodeRequest; original: string; data: ResolvedPlayback }
 let player: ReturnType<typeof createCrayonPlayer> | undefined;
 let pending: AbortController | undefined;
 let generation = 0;
 const destroyPlayer = () => { player?.destroy(); player = undefined; };
 const showError = (message: string) => { document.body.dataset.entryError = 'true'; status.textContent = message; };
-function loadMedia(url: string, original = url, type = '', direct = original === url, sources?: PlaybackSource[]) {
+function loadMedia(url: string, original = url, type = '', direct = original === url, sources?: PlaybackSource[], context?: EpisodeContext) {
   destroyPlayer();
   player = createCrayonPlayer({
-    container: '#player', url, title: '映屿 YINGYU', autoplay: false,
-    storageKey: `crayon-player-demo:${original}`,
+    container: '#player', url, title: context?.data.match?.title || '映屿 YINGYU', autoplay: false,
+    storageKey: `crayon-player-demo:${original}:${context?.data.selectedEpisodeNumber ?? ''}`,
     // Resolved URLs already use signed same-origin media forwarding. Do not
     // prepare them again or send HTML pages to Crayon's HLS/MP4 loaders.
     prepareMedia: direct ? __CRAYON_PREPARE_ENDPOINT__ || undefined : undefined,
     ...(sources?.length ? { sources, onSourceChange: (source: PlaybackSource) => { status.textContent = '当前线路 ' + source.name; } } : {}),
+    ...(context?.data.episodes?.length ? {
+      episodes: context.data.episodes, episodeNumber: context.data.selectedEpisodeNumber,
+      onEpisodeChange: (episode: PlaybackEpisode) => changeEpisode(context, episode),
+    } : {}),
     ...(type ? { player: { type } } : {}),
   });
   input.value = original;
@@ -32,29 +42,64 @@ function loadMedia(url: string, original = url, type = '', direct = original ===
     ? '支持 MP4、M3U8 直链及腾讯、优酷、爱奇艺、芒果TV、B站视频页面。'
     : '解析成功，已交给 Crayon 播放。点击画面中的播放按钮开始观看。';
 }
+async function requestPlayback(payload: EpisodeRequest & { episode?: number; episodeNumber?: number }, version: number) {
+  pending?.abort();
+  const controller = new AbortController(); pending = controller;
+  const timer = setTimeout(() => controller.abort(), 120000);
+  try {
+    const response = await fetch('/api/player/resolve', {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => null);
+    if (version !== generation) return;
+    if (!response.ok || !data?.url) throw new Error(data?.error?.message || '解析服务暂时不可用，请稍后重试。');
+    mediaAddress(data.url);
+    return data as ResolvedPlayback;
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('解析已取消或超时，请重试。');
+    throw error;
+  } finally { clearTimeout(timer); if (pending === controller) pending = undefined; }
+}
+function loadResolved(data: ResolvedPlayback, original: string, request: EpisodeRequest) {
+  const media = mediaAddress(data.url);
+  loadMedia(media, original, data.type || '', data.direct === true, data.routes, { request, original, data });
+  results.hidden = true;
+  if (data.match) status.textContent = `已匹配 ${data.match.title} · ${data.match.episodeTitle} · ${data.match.sourceName}，点击播放开始观看。`;
+}
+async function changeEpisode(context: EpisodeContext, episode: PlaybackEpisode): Promise<EpisodePlayback> {
+  const version = ++generation;
+  status.textContent = '正在解析' + episode.title + '并比较可用线路…';
+  try {
+    const payload = 'id' in context.request ? { ...context.request, episodeNumber: episode.number } : { ...context.request, episode: episode.number };
+    const data = await requestPlayback(payload, version);
+    if (!data) throw new Error('选集请求已取消');
+    status.textContent = data.match ? `当前播放 ${data.match.title} · ${data.match.episodeTitle} · ${data.match.sourceName}` : episode.title;
+    return { url: data.url, type: data.type, title: data.match?.title, sources: data.routes, episodes: data.episodes,
+      episodeNumber: data.selectedEpisodeNumber ?? episode.number, storageKey: `crayon-player-demo:${context.original}:${episode.number}` };
+  } catch (error) { if (version === generation) status.textContent = (error as Error).message; throw error; }
+}
 async function resolvePage(source: string, version: number) {
   destroyPlayer();
   input.value = source;
   if (!__CRAYON_PREPARE_ENDPOINT__) { showError('网页链接解析需要配套服务，请使用 Cloudflare 完整部署，或输入 MP4 / M3U8 直链。'); return; }
-  const controller = new AbortController(); pending = controller;
-  const timer = setTimeout(() => controller.abort(), 120000);
   // The embedded /parse entry hides page chrome; show progress in its status area.
   showError('正在解析视频页面并比较片源清晰度与连接速度…');
   try {
-    const response = await fetch('/api/player/resolve', {
-      method: 'POST', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: source }),
-    });
-    const data = await response.json().catch(() => null);
-    if (version !== generation || controller.signal.aborted) return;
-    if (!response.ok || !data?.url) throw new Error(data?.error?.message || '解析服务暂时不可用，请稍后重试。');
-    const media = mediaAddress(data.url);
-    loadMedia(media, source, data.type === 'm3u8' ? 'm3u8' : data.type === 'webm' ? 'webm' : 'mp4', data.direct === true, Array.isArray(data.routes) ? data.routes : undefined);
-    if (data.match) status.textContent = `已匹配 ${data.match.title} · ${data.match.episodeTitle} · ${data.match.sourceName}，点击播放开始观看。`;
+    const data = await requestPlayback({ url: source }, version);
+    if (data) loadResolved(data, source, { url: source });
   } catch (error) {
     if (version !== generation) return;
-    showError(controller.signal.aborted ? '解析超时，请稍后重试。' : (error as Error).message);
-  } finally { clearTimeout(timer); if (pending === controller) pending = undefined; }
+    showError((error as Error).message);
+  }
+}
+async function playCatalogEpisode(id: string, number: number, title: string) {
+  const version = ++generation;
+  status.textContent = '正在解析第' + number + '集并比较可用线路…';
+  try {
+    const data = await requestPlayback({ id, episodeNumber: number }, version);
+    if (data) loadResolved(data, title, { id });
+  } catch (error) { if (version === generation) showError((error as Error).message); }
 }
 function choice(label: string, action: () => void) {
   const button = document.createElement('button');
@@ -84,7 +129,8 @@ async function showDetail(id: string, version: number) {
       const label = document.createElement('h3'); label.textContent = line.name; results.append(label);
       const episodes = document.createElement('div'); episodes.className = 'catalog-grid';
       for (const episode of line.episodes) episodes.append(choice(episode.title, () => {
-        start(episode.url);
+        if (episode.number) void playCatalogEpisode(id, episode.number, data.title);
+        else start(episode.url);
       }));
       results.append(episodes);
     }

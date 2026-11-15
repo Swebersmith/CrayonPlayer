@@ -10,7 +10,9 @@ import { sourceToFilteredTime } from './vod-segment-filter';
 import { PLAYBACK_POLICY_CHANGE, relayModePreference, saveRelayModePreference, saveServerRelayPreference, serverRelayPreference } from './relay-settings';
 import { attachVideoLibrary, VideoLibraryOptions, VideoLibraryController } from './library';
 import { attachSourceSelector, PlaybackSource } from './source-selector';
+import { attachEpisodeSelector, EpisodePlayback, PlaybackEpisode } from './episode-selector';
 export type { PlaybackSource } from './source-selector';
+export type { PlaybackEpisode, EpisodePlayback } from './episode-selector';
 
 export type { CastOptions, CastSource, PreparedCastSource } from './casting';
 export { attachCasting, prepareCastSdk } from './casting';
@@ -64,6 +66,10 @@ export interface CrayonPlayerOptions {
   /** Ordered playable source alternatives for the same episode. */
   sources?: PlaybackSource[];
   onSourceChange?: (source: PlaybackSource) => void;
+  /** Available episodes for the current title. Each selection resolves fresh media and routes. */
+  episodes?: PlaybackEpisode[];
+  episodeNumber?: number;
+  onEpisodeChange?: (episode: PlaybackEpisode) => Promise<EpisodePlayback>;
 }
 
 /** Standalone VOD player. Host applications can also install just crayonPlayerPlugin. */
@@ -282,15 +288,32 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): CrayonPlayer {
   });
   art.title = options.title || '';
   const player = art as CrayonPlayer;
-  if (options.sources?.length) attachSourceSelector(art, options.sources, source => {
-    save();
-    resume = resume ?? vodSourceTime(art.video);
-    resumePlaying = resumePlaying || art.playing;
-    art.pause();
-    art.option.url = source.url;
-    art.option.type = source.type || '';
+  let disposeSources = () => {};
+  const setSources = (sources: PlaybackSource[] = []) => {
+    disposeSources();
+    disposeSources = attachSourceSelector(art, sources, source => {
+      save();
+      resume = resume ?? vodSourceTime(art.video);
+      resumePlaying = resumePlaying || art.playing;
+      art.pause();
+      art.option.url = source.url;
+      art.option.type = source.type || '';
+      restartPlayback();
+      options.onSourceChange?.(source);
+    });
+  };
+  setSources(options.sources);
+  if (options.episodes?.length && options.onEpisodeChange) attachEpisodeSelector(art, options.episodes, options.episodeNumber, async episode => {
+    const media = await options.onEpisodeChange!(episode);
+    if (destroyed) return media;
+    save(); art.pause();
+    identity = media.storageKey || media.url; progressKey = media.storageKey;
+    resume = 0; resumePlaying = true; advanced = false; lastSave = 0;
+    art.option.url = media.url; art.option.type = media.type || '';
+    art.title = media.title || options.title || '';
+    setSources(media.sources);
     restartPlayback();
-    options.onSourceChange?.(source);
+    return media;
   });
   if (options.library) player.library = attachVideoLibrary(art, options.library, {
     initialUrl: options.url,

@@ -2,7 +2,7 @@ import type Artplayer from 'artplayer';
 import type { MediaPreparerAuth } from './media-client';
 import { toggleCrayonFullscreen } from './fullscreen';
 import { attachLibraryMenu } from './library-menu';
-import { animateContent, cancelPanelMotion, morphPanel } from './player-theme';
+import { animateContent, announcePanel, cancelPanelMotion, morphPanel, PANEL_OPEN } from './player-theme';
 import { readSearchHistory, writeSearchHistory } from './search-history';
 import { attachMobileLibrary } from './mobile-library';
 import { httpSource, officialPage, parserPage, parserRoute, parserRoutes, playbackSource, videoPlatforms, ParserId, VideoItem, VideoEpisode, VideoSearchResult, VideoDetailResult } from './library-sources';
@@ -222,6 +222,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     });
   };
   const openView = (view: 'search' | 'episodes' | 'routes', trigger?: HTMLElement) => {
+    announcePanel(art, panel);
     panelVersion++;
     const opening = panel.hidden;
     const reopening = panelClosing;
@@ -451,6 +452,8 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
     }
   };
   host.addEventListener('click', onClick);
+  const otherPanel = (event: Event) => { if ((event as CustomEvent).detail !== panel && !panel.hidden) close(); };
+  root.addEventListener(PANEL_OPEN, otherPanel);
   for (const name of ['click', 'dblclick', 'pointerdown', 'touchstart', 'keydown']) host.addEventListener(name, event => event.stopPropagation());
   panel.addEventListener('keydown', event => {
     if (event.key === 'Escape') { event.preventDefault(); close(); }
@@ -470,7 +473,7 @@ export function attachVideoLibrary(art: Artplayer, options: VideoLibraryOptions,
   const resize = () => { host.dataset.compact = String(root.getBoundingClientRect().height < 340); };
   const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(resize);
   observer?.observe(root); window.addEventListener('resize', resize); resize();
-  const destroy = () => { if (disposed) return; disposed = true; panelVersion++; cancelPanelMotion(panel); mobile.destroy(); playVersion++; searchVersion++; menu.destroy(); loadRequest?.abort(); searchRequest?.abort(); observer?.disconnect(); window.removeEventListener('resize', resize); removeFrame(); host.remove(); };
+  const destroy = () => { if (disposed) return; disposed = true; panelVersion++; cancelPanelMotion(panel); mobile.destroy(); playVersion++; searchVersion++; menu.destroy(); loadRequest?.abort(); searchRequest?.abort(); observer?.disconnect(); window.removeEventListener('resize', resize); root.removeEventListener(PANEL_OPEN, otherPanel); removeFrame(); host.remove(); };
   art.on('destroy', destroy); syncRoute();
   if (source && (selected !== 'native' || source !== playback.initialUrl)) void play(source, selected).catch(error => message(error.message, true));
   return { open, openEpisodes: () => openView('episodes'), play, source: () => source, parser: () => selected, destroy };
