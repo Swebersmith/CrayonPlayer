@@ -3,6 +3,7 @@ import type { EpisodePlayback, PlaybackEpisode, PlaybackSource } from './src/ind
 import { mediaAddress, pageSource, playbackEntry } from './demo-entry';
 import { attachSiteTheme } from './demo-theme';
 import { catalogCard, catalogPoster, groupCatalogItems, CatalogGroup, CatalogItem } from './demo-catalog';
+import { recoverBrowserRoutes } from './demo-browser-fallback';
 
 declare const __CRAYON_PREPARE_ENDPOINT__: string;
 const entry = playbackEntry(window.location.href, window.self !== window.top);
@@ -59,9 +60,15 @@ async function requestPlayback(payload: EpisodeRequest & { episode?: number; epi
       method: 'POST', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     });
-    const data = await response.json().catch(() => null);
+    let data = await response.json().catch(() => null);
     if (version !== generation) return;
-    if (!response.ok || !data?.url) {
+    if (Array.isArray(data?.browserRoutes) && data.browserRoutes.length) {
+      status.textContent = '后端遇到 403，正在检测浏览器直连…';
+      data = await recoverBrowserRoutes(data, controller.signal);
+      if (version !== generation) return;
+    }
+    const recovered = data?.routes?.some((route: { transport?: string; url?: string; available?: boolean }) => route.transport === 'browser' && route.available === true && route.url === data.url);
+    if ((!response.ok && !recovered) || !data?.url) {
       const reasons = (Array.isArray(data?.unavailableRoutes) ? data.unavailableRoutes : [])
         .filter((route: PlaybackSource) => route?.name && route?.reason)
         .map((route: PlaybackSource) => `${route.name}（${route.reason}）`);

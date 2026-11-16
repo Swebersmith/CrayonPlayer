@@ -7,6 +7,7 @@ let create: jest.Mock;
 const originalFetch = global.fetch;
 beforeEach(()=>{
   jest.resetModules();
+  jest.dontMock('../demo-browser-fallback');
   const html=readFileSync(join(__dirname,'../index.html'),'utf8');
   document.body.innerHTML=html.split('<body>')[1].split('</body>')[0];
   document.body.removeAttribute('data-embedded'); document.body.removeAttribute('data-entry-error');
@@ -217,4 +218,16 @@ it('shows resolver errors as text and explains why static HTML playback needs a 
   Object.assign(global,{__CRAYON_PREPARE_ENDPOINT__:''});
   document.querySelector('#source-form')!.dispatchEvent(new Event('submit',{cancelable:true}));
   expect(document.querySelector('#status')!.textContent).toContain('Cloudflare 完整部署');
+});
+
+it('uses a browser-confirmed direct route when the backend cannot play any matched source',async()=>{
+  const route={id:'ffzy',name:'非凡资源 · 浏览器直连',url:'https://ffzy.demo.site/index.m3u8',type:'m3u8',transport:'browser',available:true,match:{title:'影片',episodeTitle:'第1集',sourceName:'非凡资源'}};
+  const recover=jest.fn(async(data)=>({...data,...route,routes:[route],unavailableRoutes:[]}));
+  jest.doMock('../demo-browser-fallback',()=>({recoverBrowserRoutes:recover}));
+  global.fetch=jest.fn(async()=>({ok:false,json:async()=>({error:{message:'后端没有可用线路'},browserRoutes:[route],routes:[],unavailableRoutes:[]})})) as jest.Mock;
+  window.history.replaceState(null,'','/parse?url='+encodeURIComponent('https://v.youku.com/v_show/id_a.html'));
+  require('../demo');await flushResolution();
+  expect(recover).toHaveBeenCalled();
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({url:route.url,prepareMedia:undefined,sources:[route]}));
+  expect(document.querySelector('#status')!.textContent).toContain('当前线路 影片 · 第1集 · 非凡资源');
 });
