@@ -4,13 +4,17 @@ import { attachControlPanel } from './control-panel';
 export interface PlaybackSource { id: string; name: string; url: string; type?: string; available?: boolean; reason?: string }
 const controlName = 'crayonSources';
 
-export function attachSourceSelector(art: Artplayer, sources: PlaybackSource[], onSelect: (source: PlaybackSource) => void) {
-  const routes = sources.filter(source => {
+export function validPlaybackSources(sources: PlaybackSource[]) {
+  return sources.filter(source => {
     if (!source || typeof source.id !== 'string' || typeof source.name !== 'string' || typeof source.url !== 'string') return false;
     if (source.available === false) return true;
     try { const url = new URL(source.url, location.href); return /^https?:$/.test(url.protocol) && !url.username && !url.password; }
     catch { return false; }
   });
+}
+
+export function attachSourceSelector(art: Artplayer, sources: PlaybackSource[], onSelect: (source: PlaybackSource) => void) {
+  const routes = validPlaybackSources(sources);
   if (!routes.length) return () => {};
   const root = document.createElement('div'); root.dataset.crayonSources = '';
   const trigger = document.createElement('button'); trigger.type = 'button';

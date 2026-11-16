@@ -69,3 +69,18 @@ it('shows unavailable sources with their failure reason and skips them during ke
   buttons[2].click();
   expect(root.querySelector<HTMLButtonElement>('button')!.textContent).toBe('线路 2/2');
 });
+
+it('updates resolved connection routes in place and preserves source-time position', () => {
+  const video = art.video;
+  video.currentTime = 42;
+  Object.defineProperty(video, 'duration', { configurable: true, value: 120 });
+  const browser = { ...sources[0], url: 'https://origin.example/direct.mp4', name: '如意 · 浏览器直连' };
+  art.setSources([browser], browser.id);
+  expect(art.video).toBe(video);
+  expect(art.option.url).toBe(browser.url);
+  art.emit('video:canplay');
+  expect(art.currentTime).toBe(42);
+  expect(container.querySelector('[data-crayon-sources] [role=menuitemradio]')!.textContent).toBe(browser.name);
+  art.setSources([{ id: 'invalid', name: 'invalid', url: 'javascript:alert(1)' }], 'invalid');
+  expect(art.option.url).toBe(browser.url);
+});

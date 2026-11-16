@@ -2,6 +2,24 @@ import Hls from 'hls.js';
 import type { PlaybackSource } from './src/source-selector';
 import { vodAdLoader } from './src/vod-ad-filter';
 
+export type PlaybackConnectionMode = 'auto' | 'server' | 'browser';
+export const connectionModes = [
+  { value: 'auto', label: '自动回退' },
+  { value: 'server', label: '后端转发' },
+  { value: 'browser', label: '浏览器直连' },
+] as const;
+const connectionKey = 'crayonplayer-playback-connection';
+export function playbackConnectionPreference(): PlaybackConnectionMode {
+  try {
+    const saved = localStorage.getItem(connectionKey);
+    if (saved === 'server' || saved === 'browser') return saved;
+  } catch { /* Storage is optional. */ }
+  return 'auto';
+}
+export function savePlaybackConnection(mode: PlaybackConnectionMode) {
+  try { localStorage.setItem(connectionKey, mode); } catch { /* Storage is optional. */ }
+}
+
 export interface BrowserRoute extends PlaybackSource {
   originalUrl?: string;
   transport?: string;
@@ -9,7 +27,7 @@ export interface BrowserRoute extends PlaybackSource {
   durationSeconds?: number;
   latencyMs?: number;
   quality?: { width: number; height: number; label?: string };
-  match?: { title: string; episodeTitle: string; sourceName: string; sourceId?: string; episodeNumber?: number; episodeKey?: string };
+  match?: { title: string; episodeTitle: string; sourceName: string; sourceId?: string; lineName?: string; episodeNumber?: number; episodeKey?: string };
 }
 
 function durationConflict(route: BrowserRoute, observations: BrowserRoute[]) {
@@ -97,15 +115,27 @@ export function probeBrowserRoute(route: BrowserRoute, signal: AbortSignal): Pro
 }
 
 /** Promote a 403 candidate only after this browser has decoded actual video. */
-export async function recoverBrowserRoutes(data: BrowserPlayback, signal: AbortSignal): Promise<BrowserPlayback & { routes: BrowserRoute[]; unavailableRoutes: BrowserRoute[] }> {
-  const candidates = (data.browserRoutes || []).slice(0, 8);
-  if (!candidates.length) return { ...data, routes: data.routes || [], unavailableRoutes: data.unavailableRoutes || [] };
-  const routes = [...(data.routes || [])];
+export async function recoverBrowserRoutes(data: BrowserPlayback, signal: AbortSignal, mode: PlaybackConnectionMode = 'auto'): Promise<BrowserPlayback & { routes: BrowserRoute[]; unavailableRoutes: BrowserRoute[] }> {
+  if (mode === 'server') return { ...data, routes: data.routes || [], unavailableRoutes: data.unavailableRoutes || [] };
+  const routes = mode === 'browser' ? [] : [...(data.routes || [])];
   const unavailable = new Map((data.unavailableRoutes || []).map(route => [route.id, route]));
+  const candidates = [...(data.browserRoutes || [])];
+  if (mode === 'browser') {
+    for (const route of data.routes || []) {
+      if (!route.originalUrl) {
+        unavailable.set(route.id, { ...route, available: false, url: '', reason: '当前线路缺少可直连地址' });
+        continue;
+      }
+      candidates.push({ ...route, url: route.originalUrl, transport: 'browser',
+        name: [route.match?.sourceName || route.name.split(' · ')[0], route.match?.lineName, '浏览器直连'].filter(Boolean).join(' · ') });
+    }
+  }
+  const selected = [...new Map(candidates.map(route => [route.id, route])).values()].slice(0, 8);
+  if (mode === 'auto' && !selected.length) return { ...data, routes, unavailableRoutes: [...unavailable.values()] };
   const probes = new Map<string, Promise<BrowserRoute>>();
-  for (let offset = 0; offset < candidates.length; offset += 4) {
+  for (let offset = 0; offset < selected.length; offset += 4) {
     if (signal.aborted) throw new Error('浏览器直连检测已取消');
-    const batch = candidates.slice(offset, offset + 4);
+    const batch = selected.slice(offset, offset + 4);
     const results = await Promise.allSettled(batch.map(async route => {
       if (!probes.has(route.url)) probes.set(route.url, probeBrowserRoute(route, signal));
       const probe = await probes.get(route.url)!;
@@ -119,12 +149,12 @@ export async function recoverBrowserRoutes(data: BrowserPlayback, signal: AbortS
         routes.push(route);
         unavailable.delete(route.id);
       } else {
-        unavailable.set(candidate.id, { ...candidate, available: false, url: '', reason: '后端 403，' + (result.reason as Error).message });
+        unavailable.set(candidate.id, { ...candidate, available: false, url: '', reason: (mode === 'auto' ? '后端 403，' : '') + (result.reason as Error).message });
       }
     });
   }
   if (signal.aborted) throw new Error('浏览器直连检测已取消');
-  const observations = [...routes, ...unavailable.values()];
+  const observations = [...(data.routes || []), ...routes, ...unavailable.values()];
   for (let index = routes.length - 1; index >= 0; index--) {
     const route = routes[index];
     if (!durationConflict(route, observations)) continue;

@@ -3,7 +3,9 @@ import type { EpisodePlayback, PlaybackEpisode, PlaybackSource } from './src/ind
 import { mediaAddress, pageSource, playbackEntry } from './demo-entry';
 import { attachSiteTheme } from './demo-theme';
 import { catalogCard, catalogPoster, groupCatalogItems, CatalogGroup, CatalogItem } from './demo-catalog';
-import { recoverBrowserRoutes } from './demo-browser-fallback';
+import { recoverBrowserRoutes, playbackConnectionPreference, savePlaybackConnection, connectionModes } from './demo-browser-fallback';
+import type { BrowserRoute, PlaybackConnectionMode } from './demo-browser-fallback';
+import type { Setting, SettingOption } from 'artplayer/types/setting';
 
 declare const __CRAYON_PREPARE_ENDPOINT__: string;
 const entry = playbackEntry(window.location.href, window.self !== window.top);
@@ -11,6 +13,9 @@ const status = document.querySelector<HTMLDivElement>('#status')!;
 const form = document.querySelector<HTMLFormElement>('#source-form')!;
 const input = document.querySelector<HTMLInputElement>('#source-url')!;
 const resolverProvider = document.querySelector<HTMLSelectElement>('#resolver-provider')!;
+const connectionChoice = document.querySelector<HTMLSelectElement>('#connection-mode')!;
+let connectionMode = playbackConnectionPreference();
+connectionChoice.value = connectionMode;
 const requestedParser = new URL(window.location.href).searchParams.get('parser');
 if (requestedParser && ['auto', 'cms', 'ql'].includes(requestedParser)) resolverProvider.value = requestedParser;
 const results = document.querySelector<HTMLElement>('#catalog-results')!;
@@ -18,32 +23,77 @@ interface CatalogDetail extends CatalogItem { lines: { id: string; name: string;
 type EpisodeReference = NonNullable<PlaybackEpisode['episodeRef']>;
 type EpisodeRequest = { url: string; parser?: string } | { id: string } | { episodeRef: EpisodeReference };
 interface ResolvedPlayback {
-  url: string; type?: string; direct?: boolean; routes?: PlaybackSource[]; unavailableRoutes?: PlaybackSource[]; episodes?: PlaybackEpisode[]; selectedEpisodeNumber?: number; selectedEpisodeKey?: string;
+  url: string; type?: string; direct?: boolean; routes?: BrowserRoute[]; unavailableRoutes?: PlaybackSource[]; episodes?: PlaybackEpisode[]; selectedEpisodeNumber?: number; selectedEpisodeKey?: string; selectedRouteId?: string; transport?: string;
   match?: { title: string; episodeTitle: string; sourceName: string };
 }
-interface EpisodeContext { request: EpisodeRequest; original: string; data: ResolvedPlayback }
+interface EpisodeContext { request: EpisodeRequest; original: string; data?: ResolvedPlayback }
+let activeContext: EpisodeContext | undefined;
 let player: ReturnType<typeof createCrayonPlayer> | undefined;
+let playerContext: EpisodeContext | undefined;
 let pending: AbortController | undefined;
 let generation = 0;
 let searchGroups: CatalogGroup[] = [];
 let searchSummary = '';
 const disposeTheme = attachSiteTheme();
-const destroyPlayer = () => { player?.destroy(); player = undefined; };
+const destroyPlayer = () => { player?.destroy(); player = undefined; playerContext = undefined; };
 const showError = (message: string) => { document.body.dataset.entryError = 'true'; status.textContent = message; };
+function connectionSetting(): Setting {
+  return { name: 'playbackConnection', html: '解析连接', tooltip: connectionModes.find(mode => mode.value === connectionMode)!.label,
+    selector: connectionModes.map(mode => ({ html: mode.label, value: mode.value, default: mode.value === connectionMode })),
+    onSelect(item: SettingOption) {
+      const mode = item.value as PlaybackConnectionMode;
+      void changeConnection(mode);
+      return connectionModes.find(choice => choice.value === mode)!.label;
+    } };
+}
+async function changeConnection(mode: PlaybackConnectionMode) {
+  if (!connectionModes.some(choice => choice.value === mode) || mode === connectionMode) return;
+  connectionMode = mode;
+  savePlaybackConnection(mode);
+  connectionChoice.value = mode;
+  player?.setting.update(connectionSetting());
+  const context = activeContext;
+  if (!context) { status.textContent = '已保存解析连接方式。'; return; }
+  const version = ++generation;
+  status.textContent = '正在切换解析连接方式…';
+  try {
+    const data = await requestPlayback(context.request, version);
+    if (!data) return;
+    const selected = data.routes?.find(route => route.id === context.data?.selectedRouteId);
+    const resolved = selected ? { ...data, ...selected, selectedRouteId: selected.id } : data;
+    context.data = resolved;
+    if (player && playerContext === context) {
+      const sources = playbackSources(resolved) || [{ id: 'current', name: resolved.match?.sourceName || '当前线路', url: resolved.url, type: resolved.type }];
+      player.setSources(sources, resolved.selectedRouteId || sources.find(source => source.url === resolved.url)?.id);
+      document.body.dataset.entryError = 'false';
+      status.textContent = playbackStatus(resolved);
+    } else loadResolved(resolved, context.original, context.request);
+  } catch (error) {
+    if (version !== generation) return;
+    player?.pause();
+    showError((error as Error).message);
+  }
+}
+connectionChoice.addEventListener('change', () => { void changeConnection(connectionChoice.value as PlaybackConnectionMode); });
 function loadMedia(url: string, original = url, type = '', direct = original === url, sources?: PlaybackSource[], context?: EpisodeContext) {
   destroyPlayer();
+  playerContext = context;
   player = createCrayonPlayer({
-    container: '#player', url, title: context?.data.match?.title || 'crayonplayer', autoplay: false,
-    storageKey: `crayon-player-demo:${original}:${context?.data.selectedEpisodeKey ?? context?.data.selectedEpisodeNumber ?? ''}`,
+    container: '#player', url, title: context?.data?.match?.title || 'crayonplayer', autoplay: false,
+    storageKey: `crayon-player-demo:${original}:${context?.data?.selectedEpisodeKey ?? context?.data?.selectedEpisodeNumber ?? ''}`,
     // Resolved URLs already use signed same-origin media forwarding. Do not
     // prepare them again or send HTML pages to Crayon's HLS/MP4 loaders.
     prepareMedia: direct ? __CRAYON_PREPARE_ENDPOINT__ || undefined : undefined,
-    ...(sources?.length ? { sources, onSourceChange: (source: PlaybackSource) => { status.textContent = '当前线路 ' + source.name; } } : {}),
-    ...(context?.data.episodes?.length ? {
+    ...(sources?.length ? { sources, onSourceChange: (source: PlaybackSource) => {
+      const selected = context?.data?.routes?.find(route => route.id === source.id);
+      if (context?.data && selected) context.data = { ...context.data, ...selected, selectedRouteId: selected.id };
+      status.textContent = '当前线路 ' + source.name;
+    } } : {}),
+    ...(context?.data?.episodes?.length ? {
       episodes: context.data.episodes, episodeNumber: context.data.selectedEpisodeNumber, episodeKey: context.data.selectedEpisodeKey,
       onEpisodeChange: (episode: PlaybackEpisode) => changeEpisode(context, episode),
     } : {}),
-    ...(type ? { player: { type } } : {}),
+    player: { ...(type ? { type } : {}), ...(context ? { settings: [connectionSetting()] } : {}) },
   });
   input.value = original;
   document.body.dataset.entryError = 'false';
@@ -62,9 +112,9 @@ async function requestPlayback(payload: EpisodeRequest & { episode?: number; epi
     });
     let data = await response.json().catch(() => null);
     if (version !== generation) return;
-    if (Array.isArray(data?.browserRoutes) && data.browserRoutes.length) {
-      status.textContent = '后端遇到 403，正在检测浏览器直连…';
-      data = await recoverBrowserRoutes(data, controller.signal);
+    if (data && (connectionMode === 'browser' || connectionMode === 'auto' && Array.isArray(data.browserRoutes) && data.browserRoutes.length)) {
+      status.textContent = connectionMode === 'browser' ? '正在检测浏览器直连…' : '后端遇到 403，正在检测浏览器直连…';
+      data = await recoverBrowserRoutes(data, controller.signal, connectionMode);
       if (version !== generation) return;
     }
     const recovered = data?.routes?.some((route: { transport?: string; url?: string; available?: boolean }) => route.transport === 'browser' && route.available === true && route.url === data.url);
@@ -72,7 +122,7 @@ async function requestPlayback(payload: EpisodeRequest & { episode?: number; epi
       const reasons = (Array.isArray(data?.unavailableRoutes) ? data.unavailableRoutes : [])
         .filter((route: PlaybackSource) => route?.name && route?.reason)
         .map((route: PlaybackSource) => `${route.name}（${route.reason}）`);
-      throw new Error([data?.error?.message || '解析服务暂时不可用，请稍后重试。', ...reasons].join('。'));
+      throw new Error([connectionMode === 'browser' ? '浏览器直连没有可播放线路' : data?.error?.message || '解析服务暂时不可用，请稍后重试。', ...reasons].join('。'));
     }
     mediaAddress(data.url);
     return data as ResolvedPlayback;
@@ -83,13 +133,15 @@ async function requestPlayback(payload: EpisodeRequest & { episode?: number; epi
 }
 function loadResolved(data: ResolvedPlayback, original: string, request: EpisodeRequest) {
   const media = mediaAddress(data.url);
-  loadMedia(media, original, data.type || '', data.direct === true, playbackSources(data), { request, original, data });
+  const context = { request, original, data };
+  activeContext = context;
+  loadMedia(media, original, data.type || '', data.direct === true, playbackSources(data), context);
   results.hidden = true;
   if (data.match) status.textContent = playbackStatus(data) + '。点击播放开始观看。';
 }
 function playbackStatus(data: ResolvedPlayback) {
   if (!data.match) return '';
-  const current = `当前线路 ${data.match.title} · ${data.match.episodeTitle} · ${data.match.sourceName}`;
+  const current = `当前线路 ${data.match.title} · ${data.match.episodeTitle} · ${data.match.sourceName} · ${data.transport === 'browser' ? '浏览器直连' : '后端转发'}`;
   if (!data.routes) return current;
   return `${current}。${data.routes.length} 条可播放，${data.unavailableRoutes?.length || 0} 条暂不可用，可在线路中查看原因`;
 }
@@ -105,8 +157,11 @@ async function changeEpisode(context: EpisodeContext, episode: PlaybackEpisode):
       : 'id' in context.request ? { ...context.request, episodeNumber: episode.number }
       : 'episodeRef' in context.request ? { id: context.request.episodeRef.id, episodeNumber: episode.number }
       : { ...context.request, episode: episode.number };
+    context.request = payload;
+    activeContext = context;
     const data = await requestPlayback(payload, version);
     if (!data) throw new Error('选集请求已取消');
+    context.data = data;
     status.textContent = playbackStatus(data) || episode.title;
     return { url: data.url, type: data.type, title: data.match?.title, sources: playbackSources(data), episodes: data.episodes,
       episodeNumber: data.selectedEpisodeNumber ?? episode.number, episodeKey: data.selectedEpisodeKey ?? episode.key,
@@ -121,6 +176,7 @@ async function resolvePage(source: string, version: number) {
   showError('正在解析视频页面并比较片源清晰度与连接速度…');
   try {
     const request = { url: source, parser: resolverProvider.value };
+    activeContext = { request, original: source };
     const data = await requestPlayback(request, version);
     if (data) loadResolved(data, source, request);
   } catch (error) {
@@ -133,6 +189,7 @@ async function playCatalogEpisode(episodeRef: EpisodeReference, title: string) {
   status.textContent = '正在解析' + episodeRef.title + '并比较可用线路…';
   try {
     const request = { episodeRef };
+    activeContext = { request, original: title };
     const data = await requestPlayback(request, version);
     if (data) loadResolved(data, title, request);
   } catch (error) { if (version === generation) showError((error as Error).message); }
@@ -259,6 +316,7 @@ async function searchTitle(value: string) {
 function start(url: string) {
   const version = ++generation;
   pending?.abort(); pending = undefined;
+  activeContext = undefined;
   try {
     const source = pageSource(url);
     if (source) {

@@ -10,7 +10,7 @@ import { sourceToFilteredTime } from './vod-segment-filter';
 import { resolverMediaUrl } from './vod-ad-filter';
 import { PLAYBACK_POLICY_CHANGE, relayModePreference, saveRelayModePreference, saveServerRelayPreference, serverRelayPreference } from './relay-settings';
 import { attachVideoLibrary, VideoLibraryOptions, VideoLibraryController } from './library';
-import { attachSourceSelector, PlaybackSource } from './source-selector';
+import { attachSourceSelector, PlaybackSource, validPlaybackSources } from './source-selector';
 import { attachEpisodeSelector, EpisodePlayback, PlaybackEpisode } from './episode-selector';
 export type { PlaybackSource } from './source-selector';
 export type { PlaybackEpisode, EpisodePlayback } from './episode-selector';
@@ -37,7 +37,10 @@ export type { VideoLibraryOptions, VideoLibraryController } from './library';
 export { attachVideoLibrary } from './library';
 export { parserRoutes, videoPlatforms, parserPage, officialPage } from './library-sources';
 export type { ParserId, VideoPlatform, VideoSearchResult, VideoDetailResult } from './library-sources';
-export type CrayonPlayer = Artplayer & { library?: VideoLibraryController };
+export type CrayonPlayer = Artplayer & {
+  library?: VideoLibraryController;
+  setSources(sources: PlaybackSource[], selectedId?: string): void;
+};
 
 type ArtOptions = ConstructorParameters<typeof Artplayer>[0];
 export interface CrayonPlayerOptions {
@@ -298,18 +301,25 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): CrayonPlayer {
   art.title = options.title || '';
   const player = art as CrayonPlayer;
   let disposeSources = () => {};
+  const selectSource = (source: PlaybackSource) => {
+    save();
+    resume = resume ?? vodSourceTime(art.video);
+    resumePlaying = resumePlaying || art.playing;
+    art.pause();
+    art.option.url = source.url;
+    art.option.type = source.type || '';
+    restartPlayback();
+    options.onSourceChange?.(source);
+  };
   const setSources = (sources: PlaybackSource[] = []) => {
     disposeSources();
-    disposeSources = attachSourceSelector(art, sources, source => {
-      save();
-      resume = resume ?? vodSourceTime(art.video);
-      resumePlaying = resumePlaying || art.playing;
-      art.pause();
-      art.option.url = source.url;
-      art.option.type = source.type || '';
-      restartPlayback();
-      options.onSourceChange?.(source);
-    });
+    disposeSources = attachSourceSelector(art, sources, selectSource);
+  };
+  player.setSources = (sources, selectedId) => {
+    const valid = validPlaybackSources(sources);
+    const selected = valid.find(source => source.id === selectedId && source.available !== false);
+    if (selected && selected.url !== art.option.url) selectSource(selected);
+    setSources(valid);
   };
   setSources(options.sources);
   if (options.episodes?.length && options.onEpisodeChange) attachEpisodeSelector(art, options.episodes, options.episodeNumber, async episode => {

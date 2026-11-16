@@ -17,10 +17,11 @@ beforeEach(()=>{
     if(type==='pagehide'||type==='pageshow')listeners.push({type,listener:listener as EventListener});
     add(type,listener,options);
   });
-  create=jest.fn(()=>({destroy:jest.fn()}));
+  create=jest.fn(()=>({destroy:jest.fn(),pause:jest.fn(),setSources:jest.fn(),setting:{update:jest.fn()}}));
   jest.doMock('../src/index',()=>({createCrayonPlayer:create,createMediaPreparer:jest.fn(()=>jest.fn())}));
   global.fetch=jest.fn(async()=>({ok:true,json:async()=>({expiresAt:Date.now()+3600000})})) as jest.Mock;
   sessionStorage.clear();
+  localStorage.clear();
   Object.assign(global,{__CRAYON_PREPARE_ENDPOINT__:'/api/player/prepare'});
 });
 afterEach(()=>{
@@ -143,7 +144,7 @@ it('resolves an HTML page and loads the returned stream with Crayon instead of a
   expect(create).not.toHaveBeenCalled();
   expect(document.querySelector('#status')!.textContent).toContain('正在解析');
   await flushResolution();
-  expect(create).toHaveBeenCalledWith(expect.objectContaining({url:'https://player.example/api/player/resolved/123.m3u8',player:{type:'m3u8'},prepareMedia:undefined}));
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({url:'https://player.example/api/player/resolved/123.m3u8',player:expect.objectContaining({type:'m3u8'}),prepareMedia:undefined}));
   expect(document.querySelector('iframe')).toBeNull();
   expect((document.querySelector('#source-url') as HTMLInputElement).value).toBe(source);
 });
@@ -223,11 +224,43 @@ it('shows resolver errors as text and explains why static HTML playback needs a 
 it('uses a browser-confirmed direct route when the backend cannot play any matched source',async()=>{
   const route={id:'ffzy',name:'非凡资源 · 浏览器直连',url:'https://ffzy.demo.site/index.m3u8',type:'m3u8',transport:'browser',available:true,match:{title:'影片',episodeTitle:'第1集',sourceName:'非凡资源'}};
   const recover=jest.fn(async(data)=>({...data,...route,routes:[route],unavailableRoutes:[]}));
-  jest.doMock('../demo-browser-fallback',()=>({recoverBrowserRoutes:recover}));
+  jest.doMock('../demo-browser-fallback',()=>({...jest.requireActual('../demo-browser-fallback'),recoverBrowserRoutes:recover}));
   global.fetch=jest.fn(async()=>({ok:false,json:async()=>({error:{message:'后端没有可用线路'},browserRoutes:[route],routes:[],unavailableRoutes:[]})})) as jest.Mock;
   window.history.replaceState(null,'','/parse?url='+encodeURIComponent('https://v.youku.com/v_show/id_a.html'));
   require('../demo');await flushResolution();
   expect(recover).toHaveBeenCalled();
   expect(create).toHaveBeenCalledWith(expect.objectContaining({url:route.url,prepareMedia:undefined,sources:[route]}));
   expect(document.querySelector('#status')!.textContent).toContain('当前线路 影片 · 第1集 · 非凡资源');
+});
+
+it('switches the current parsed episode in place and remembers a browser-direct preference',async()=>{
+  const server={id:'one',name:'资源',url:'https://player.example/server.mp4',originalUrl:'https://origin.example/direct.mp4',type:'mp4'};
+  const browser={...server,url:server.originalUrl,transport:'browser',available:true};
+  const recover=jest.fn(async(data)=>({...data,...browser,routes:[browser]}));
+  jest.doMock('../demo-browser-fallback',()=>({...jest.requireActual('../demo-browser-fallback'),recoverBrowserRoutes:recover}));
+  global.fetch=jest.fn(async()=>({ok:true,json:async()=>({...server,routes:[server],selectedRouteId:server.id})})) as jest.Mock;
+  window.history.replaceState(null,'','/?url='+encodeURIComponent('https://v.youku.com/v_show/id_a.html'));
+  require('../demo');await flushResolution();
+  const instance=create.mock.results[0].value;
+  const select=document.querySelector<HTMLSelectElement>('#connection-mode')!;
+  select.value='browser';select.dispatchEvent(new Event('change'));
+  await flushResolution();
+  expect(recover).toHaveBeenCalledWith(expect.anything(),expect.anything(),'browser');
+  expect(instance.setSources).toHaveBeenCalledWith([browser],server.id);
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(localStorage.getItem('crayonplayer-playback-connection')).toBe('browser');
+  expect(create.mock.calls[0][0].player.settings[0].selector.map((item:{value:string})=>item.value)).toEqual(['auto','server','browser']);
+});
+
+it('restores a server-only preference and leaves 403 direct candidates unprobed',async()=>{
+  localStorage.setItem('crayonplayer-playback-connection','server');
+  const route={id:'one',name:'资源',url:'https://player.example/server.mp4'};
+  const recover=jest.fn();
+  jest.doMock('../demo-browser-fallback',()=>({...jest.requireActual('../demo-browser-fallback'),recoverBrowserRoutes:recover}));
+  global.fetch=jest.fn(async()=>({ok:true,json:async()=>({...route,routes:[route],browserRoutes:[{...route,id:'blocked'}]})})) as jest.Mock;
+  window.history.replaceState(null,'','/?url='+encodeURIComponent('https://v.youku.com/v_show/id_a.html'));
+  require('../demo');await flushResolution();
+  expect((document.querySelector('#connection-mode') as HTMLSelectElement).value).toBe('server');
+  expect(recover).not.toHaveBeenCalled();
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({url:route.url}));
 });

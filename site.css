@@ -165,12 +165,19 @@ html[data-theme=light] .theme-moon {
   margin: 0 0 20px;
 }
 
+.playback-options {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px 18px;
+  margin: -8px 0 16px;
+}
 .resolver-choice {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
-  margin: -8px 0 16px;
+  margin: 0;
   color: var(--muted);
   font-size: 12px;
 }
@@ -182,7 +189,7 @@ html[data-theme=light] .theme-moon {
   background: var(--surface);
   font: inherit;
 }
-html[data-embedded="true"] .resolver-choice { display: none; }
+html[data-embedded="true"] .playback-options { display: none; }
 
 .source-field {
   display: flex;
@@ -798,6 +805,17 @@ html[data-embedded=true] body[data-entry-error=true] #status {
   color: #fff;
   z-index: 100;
 }
+html[data-embedded=true] body[data-entry-error=true] .playback-options {
+  display: flex;
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  justify-content: center;
+  margin: 0;
+  z-index: 101;
+}
+html[data-embedded=true] .resolver-choice[for=resolver-provider] { display: none; }
 
 @media(prefers-reduced-motion:reduce) {
 

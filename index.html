@@ -43,9 +43,14 @@
         </div>
         <button class="load" type="submit">搜索 / 播放<span aria-hidden="true">↗</span></button>
       </form>
+      <div class="playback-options">
       <label class="resolver-choice" for="resolver-provider">网页解析
         <select id="resolver-provider"><option value="auto">自动比选</option><option value="cms">采集源</option><option value="ql">QL · 麒麟</option></select>
       </label>
+      <label class="resolver-choice" for="connection-mode">解析连接
+        <select id="connection-mode"><option value="auto">自动回退</option><option value="server">后端转发</option><option value="browser">浏览器直连</option></select>
+      </label>
+      </div>
       <div class="player-frame"><div id="player"></div></div>
       <div id="status" role="status" aria-live="polite"></div>
       <section id="catalog-results" aria-label="搜索结果与分集" hidden></section>

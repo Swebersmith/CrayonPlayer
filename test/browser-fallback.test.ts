@@ -1,5 +1,5 @@
 import Hls from 'hls.js';
-import { probeBrowserRoute, recoverBrowserRoutes, BrowserRoute } from '../demo-browser-fallback';
+import { probeBrowserRoute, recoverBrowserRoutes, BrowserRoute, playbackConnectionPreference, savePlaybackConnection } from '../demo-browser-fallback';
 
 const candidate = (id: string): BrowserRoute => ({ id, name: id + ' · 浏览器直连', url: 'https://' + id + '.demo.site/index.m3u8', type: 'm3u8', transport: 'browser',
   match: { title: '影片', episodeTitle: '第1集', sourceName: id, sourceId: id } });
@@ -8,6 +8,7 @@ let success: boolean;
 const addresses = new WeakMap<Hls, string>();
 beforeEach(() => {
   media = []; success = true;
+  localStorage.clear();
   jest.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
   jest.spyOn(Hls, 'isSupported').mockReturnValue(true);
   jest.spyOn(Hls.prototype, 'loadSource').mockImplementation(function (this: Hls, url) { addresses.set(this, url); });
@@ -74,4 +75,36 @@ it('shares a network probe for duplicate URLs while preserving each source ident
   expect(data.routes.map(route => route.match?.sourceId)).toEqual(['one', 'two']);
   expect(data.routes.map(route => route.name.split(' · ')[0])).toEqual(['one', 'two']);
   expect(data.unavailableRoutes).toEqual([]);
+});
+
+it('remembers the connection choice and preserves automatic fallback as the default', () => {
+  expect(playbackConnectionPreference()).toBe('auto');
+  savePlaybackConnection('browser');
+  expect(playbackConnectionPreference()).toBe('browser');
+  savePlaybackConnection('server');
+  expect(playbackConnectionPreference()).toBe('server');
+});
+
+it('probes healthy source originals when browser direct is selected', async () => {
+  const ready = { ...candidate('server'), url: 'https://player.demo.site/api/jiexi/resolved-media?sig=example', originalUrl: 'https://origin.demo.site/index.m3u8' };
+  const data = await recoverBrowserRoutes({ url: ready.url, routes: [ready] }, new AbortController().signal, 'browser');
+  expect(data.url).toBe(ready.originalUrl);
+  expect(data.routes[0].transport).toBe('browser');
+  expect(Hls.prototype.loadSource).toHaveBeenCalledWith(ready.originalUrl);
+});
+
+it('honors server-only selection without probing 403 browser candidates', async () => {
+  const ready = candidate('server');
+  const data = await recoverBrowserRoutes({ url: ready.url, routes: [ready], browserRoutes: [candidate('ffzy')] }, new AbortController().signal, 'server');
+  expect(data.url).toBe(ready.url);
+  expect(data.routes).toEqual([ready]);
+  expect(Hls.prototype.attachMedia).not.toHaveBeenCalled();
+});
+
+it('does not keep a proxy URL when direct mode has no usable original address', async () => {
+  const ready = candidate('server');
+  const data = await recoverBrowserRoutes({ url: ready.url, routes: [ready] }, new AbortController().signal, 'browser');
+  expect(data.url).toBeUndefined();
+  expect(data.routes).toEqual([]);
+  expect(data.unavailableRoutes[0].reason).toContain('缺少可直连地址');
 });
