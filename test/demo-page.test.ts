@@ -87,6 +87,7 @@ it('searches a title, opens source lines and plays a selected episode',async()=>
   const media='https://cdn.demo.site/episode.m3u8';
   global.fetch=jest.fn(async(path:string)=>({ok:true,json:async()=>path.startsWith('/api/resolve')
     ? {kind:'search',items:[{id:'ruyi:1',title:'测试影片',year:'2026',sourceName:'如意',remarks:'完结'}]}
+    : path === '/api/player/resolve' ? {url:media,type:'m3u8',direct:false}
     : {title:'测试影片',lines:[{id:'0',name:'HLS',episodes:[{id:'0',title:'第一集',url:media}]}]}})) as jest.Mock;
   require('../demo');
   const field=document.querySelector<HTMLInputElement>('#source-url')!;
@@ -99,7 +100,29 @@ it('searches a title, opens source lines and plays a selected episode',async()=>
   await flushResolution();
   expect(document.querySelector('#catalog-results h3')!.textContent).toBe('HLS');
   document.querySelector<HTMLButtonElement>('#catalog-results [data-catalog-episode]')!.click();
-  expect(create.mock.calls[1][0]).toMatchObject({url:media,prepareMedia:'/api/player/prepare'});
+  await flushResolution();
+  expect(JSON.parse((global.fetch as jest.Mock).mock.calls[2][1].body)).toEqual({episodeRef:{id:'ruyi:1',line:'0',lineName:'HLS',episode:'0',title:'第一集'}});
+  expect(create.mock.calls[1][0]).toMatchObject({url:media,prepareMedia:undefined});
+});
+
+it('passes distinct references and resume keys when changing between editions on the same date', async () => {
+  const episodes = [
+    {number:20261029,title:'20261029上',key:'date:20261029|上',episodeRef:{id:'ruyi:1',line:'0',episode:'2',title:'20261029上'}},
+    {number:20261029,title:'20261029下',key:'date:20261029|下',episodeRef:{id:'ruyi:1',line:'0',episode:'3',title:'20261029下'}},
+  ];
+  global.fetch=jest.fn(async(_path:string,options:RequestInit)=>{
+    const request=JSON.parse(options.body as string);
+    const episode=request.episodeRef ? episodes[1] : episodes[0];
+    return {ok:true,json:async()=>({url:'https://player.example/episode.m3u8',type:'m3u8',episodes,selectedEpisodeNumber:episode.number,selectedEpisodeKey:episode.key})};
+  }) as jest.Mock;
+  window.history.replaceState(null,'','/?url='+encodeURIComponent('https://v.youku.com/v_show/id_a.html'));
+  require('../demo');await flushResolution();
+  const options=create.mock.calls[0][0];
+  expect(options.episodeKey).toBe(episodes[0].key);
+  const next=await options.onEpisodeChange(episodes[1]);
+  expect(JSON.parse((global.fetch as jest.Mock).mock.calls[1][1].body)).toEqual({episodeRef:episodes[1].episodeRef});
+  expect(next.episodeKey).toBe(episodes[1].key);
+  expect(next.storageKey).not.toBe(options.storageKey);
 });
 it('resolves an HTML page and loads the returned stream with Crayon instead of an iframe',async()=>{
   const source='https://v.youku.com/v_show/id_XNjU3OTQ2NDMyOA==.html';

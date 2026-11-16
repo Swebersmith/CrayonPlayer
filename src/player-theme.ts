@@ -81,6 +81,9 @@ export function attachPlayerTheme(art: Artplayer) {
 [data-crayon-episode-panel]{display:flex;flex-direction:column;gap:6px}
 [data-crayon-episode-pages]{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:none;font-size:12px}
 [data-crayon-episode-grid]{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:5px;min-height:0;overflow:auto;overscroll-behavior:contain;touch-action:pan-y;scrollbar-width:thin;scrollbar-color:#ffffff40 transparent;padding:2px}
+[data-crayon-episode-grid]{grid-auto-rows:minmax(44px,max-content);align-content:start}
+[data-crayon-episode-grid] button{height:auto!important;line-height:1.5!important}
+[data-crayon-named-episodes=true] [data-crayon-episode-grid]{grid-template-columns:repeat(auto-fill,minmax(min(140px,100%),1fr))}
 [data-crayon-episode-status]{font-size:12px;line-height:1.5;white-space:normal;overflow-wrap:anywhere;margin:0 6px;color:var(--crayon-ink,#fff)}
 [data-crayon-episode-status]:empty{display:none}
 [data-crayon-theme] .crayon-library-panel *{color:var(--crayon-ink)!important}

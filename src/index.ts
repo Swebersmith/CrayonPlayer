@@ -70,6 +70,7 @@ export interface CrayonPlayerOptions {
   /** Available episodes for the current title. Each selection resolves fresh media and routes. */
   episodes?: PlaybackEpisode[];
   episodeNumber?: number;
+  episodeKey?: string;
   onEpisodeChange?: (episode: PlaybackEpisode) => Promise<EpisodePlayback>;
 }
 
@@ -322,7 +323,7 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): CrayonPlayer {
     setSources(media.sources);
     restartPlayback();
     return media;
-  });
+  }, options.episodeKey);
   if (options.library) player.library = attachVideoLibrary(art, options.library, {
     initialUrl: options.url,
     suspend: () => {

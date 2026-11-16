@@ -90,3 +90,28 @@ it('ignores a pending episode result after the player is destroyed', async () =>
   await flush();
   expect(art.option.url).toBe(original.url);
 });
+
+it('keeps editions sharing a date separate and selects their exact catalogue references', async () => {
+  art.destroy();
+  const variants = [
+    { number: 20261029, title: '20261029上', key: '20261029:upper', episodeRef: { id: 'ruyi:1', line: '0', episode: '2', title: '20261029上' } },
+    { number: 20261029, title: '20261029下', key: '20261029:lower', episodeRef: { id: 'ruyi:1', line: '0', episode: '3', title: '20261029下' } },
+    { number: 20261029, title: '20261029加更版', key: '20261029:extra', episodeRef: { id: 'bfzy:1', line: '0', episode: '4', title: '20261029加更版' } },
+  ];
+  select.mockResolvedValue({ url: replacement.url, type: 'mp4', episodes: variants, episodeNumber: 20261029, episodeKey: variants[0].key });
+  art = createCrayonPlayer({ container, url: original.url, episodes: variants, episodeNumber: 20261029, episodeKey: variants[1].key, onEpisodeChange: select, enhancements: { casting: false } });
+  trigger().click();
+  expect(panel().querySelectorAll('[role=menuitemradio]')).toHaveLength(3);
+  expect(panel().dataset.crayonNamedEpisodes).toBe('true');
+  expect(panel().querySelector('[aria-checked=true]')?.textContent).toBe('20261029下');
+  panel().querySelector<HTMLButtonElement>('[data-episode-key="20261029:upper"]')!.click();
+  await flush();
+  expect(select).toHaveBeenCalledWith(variants[0]);
+  expect(panel().querySelector('[aria-checked=true]')?.textContent).toBe('20261029上');
+  trigger().click();
+  select.mockResolvedValue({ url: replacement.url, episodes: variants, episodeKey: variants[2].key });
+  panel().querySelector<HTMLButtonElement>('[data-episode-key="20261029:extra"]')!.click();
+  await flush();
+  expect(select).toHaveBeenLastCalledWith(variants[2]);
+  expect(panel().querySelector('[aria-checked=true]')?.textContent).toBe('20261029加更版');
+});

@@ -14,9 +14,10 @@ const requestedParser = new URL(window.location.href).searchParams.get('parser')
 if (requestedParser && ['auto', 'cms', 'ql'].includes(requestedParser)) resolverProvider.value = requestedParser;
 const results = document.querySelector<HTMLElement>('#catalog-results')!;
 interface CatalogDetail extends CatalogItem { lines: { id: string; name: string; episodes: { id: string; title: string; url: string; number?: number }[] }[] }
-type EpisodeRequest = { url: string; parser?: string } | { id: string };
+type EpisodeReference = NonNullable<PlaybackEpisode['episodeRef']>;
+type EpisodeRequest = { url: string; parser?: string } | { id: string } | { episodeRef: EpisodeReference };
 interface ResolvedPlayback {
-  url: string; type?: string; direct?: boolean; routes?: PlaybackSource[]; episodes?: PlaybackEpisode[]; selectedEpisodeNumber?: number;
+  url: string; type?: string; direct?: boolean; routes?: PlaybackSource[]; episodes?: PlaybackEpisode[]; selectedEpisodeNumber?: number; selectedEpisodeKey?: string;
   match?: { title: string; episodeTitle: string; sourceName: string };
 }
 interface EpisodeContext { request: EpisodeRequest; original: string; data: ResolvedPlayback }
@@ -32,13 +33,13 @@ function loadMedia(url: string, original = url, type = '', direct = original ===
   destroyPlayer();
   player = createCrayonPlayer({
     container: '#player', url, title: context?.data.match?.title || 'crayonplayer', autoplay: false,
-    storageKey: `crayon-player-demo:${original}:${context?.data.selectedEpisodeNumber ?? ''}`,
+    storageKey: `crayon-player-demo:${original}:${context?.data.selectedEpisodeKey ?? context?.data.selectedEpisodeNumber ?? ''}`,
     // Resolved URLs already use signed same-origin media forwarding. Do not
     // prepare them again or send HTML pages to Crayon's HLS/MP4 loaders.
     prepareMedia: direct ? __CRAYON_PREPARE_ENDPOINT__ || undefined : undefined,
     ...(sources?.length ? { sources, onSourceChange: (source: PlaybackSource) => { status.textContent = '当前线路 ' + source.name; } } : {}),
     ...(context?.data.episodes?.length ? {
-      episodes: context.data.episodes, episodeNumber: context.data.selectedEpisodeNumber,
+      episodes: context.data.episodes, episodeNumber: context.data.selectedEpisodeNumber, episodeKey: context.data.selectedEpisodeKey,
       onEpisodeChange: (episode: PlaybackEpisode) => changeEpisode(context, episode),
     } : {}),
     ...(type ? { player: { type } } : {}),
@@ -78,12 +79,16 @@ async function changeEpisode(context: EpisodeContext, episode: PlaybackEpisode):
   const version = ++generation;
   status.textContent = '正在解析' + episode.title + '并比较可用线路…';
   try {
-    const payload = 'id' in context.request ? { ...context.request, episodeNumber: episode.number } : { ...context.request, episode: episode.number };
+    const payload = episode.episodeRef ? { episodeRef: episode.episodeRef }
+      : 'id' in context.request ? { ...context.request, episodeNumber: episode.number }
+      : 'episodeRef' in context.request ? { id: context.request.episodeRef.id, episodeNumber: episode.number }
+      : { ...context.request, episode: episode.number };
     const data = await requestPlayback(payload, version);
     if (!data) throw new Error('选集请求已取消');
     status.textContent = data.match ? `当前播放 ${data.match.title} · ${data.match.episodeTitle} · ${data.match.sourceName}` : episode.title;
     return { url: data.url, type: data.type, title: data.match?.title, sources: data.routes, episodes: data.episodes,
-      episodeNumber: data.selectedEpisodeNumber ?? episode.number, storageKey: `crayon-player-demo:${context.original}:${episode.number}` };
+      episodeNumber: data.selectedEpisodeNumber ?? episode.number, episodeKey: data.selectedEpisodeKey ?? episode.key,
+      storageKey: `crayon-player-demo:${context.original}:${data.selectedEpisodeKey ?? episode.key ?? episode.number}` };
   } catch (error) { if (version === generation) status.textContent = (error as Error).message; throw error; }
 }
 async function resolvePage(source: string, version: number) {
@@ -101,12 +106,13 @@ async function resolvePage(source: string, version: number) {
     showError((error as Error).message);
   }
 }
-async function playCatalogEpisode(id: string, number: number, title: string) {
+async function playCatalogEpisode(episodeRef: EpisodeReference, title: string) {
   const version = ++generation;
-  status.textContent = '正在解析第' + number + '集并比较可用线路…';
+  status.textContent = '正在解析' + episodeRef.title + '并比较可用线路…';
   try {
-    const data = await requestPlayback({ id, episodeNumber: number }, version);
-    if (data) loadResolved(data, title, { id });
+    const request = { episodeRef };
+    const data = await requestPlayback(request, version);
+    if (data) loadResolved(data, title, request);
   } catch (error) { if (version === generation) showError((error as Error).message); }
 }
 function choice(label: string, action: () => void) {
@@ -187,8 +193,7 @@ function renderDetail(data: CatalogDetail, id: string, group: CatalogGroup) {
     const grid = document.createElement('div'); grid.className = 'catalog-grid';
     for (const episode of line.episodes.slice(page * 100, page * 100 + 100)) {
       const button = choice(episode.title, () => {
-        if (episode.number) void playCatalogEpisode(id, episode.number, data.title);
-        else start(episode.url);
+        void playCatalogEpisode({ id, line: line.id, lineName: line.name, episode: episode.id, title: episode.title }, data.title);
       });
       button.dataset.catalogEpisode = ''; grid.append(button);
     }

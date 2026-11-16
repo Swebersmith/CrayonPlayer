@@ -2,7 +2,12 @@ import type Artplayer from 'artplayer';
 import { attachControlPanel } from './control-panel';
 import type { PlaybackSource } from './source-selector';
 
-export interface PlaybackEpisode { number: number; title: string }
+export interface PlaybackEpisode {
+  number: number;
+  title: string;
+  key?: string;
+  episodeRef?: { id: string; line: string; lineName?: string; episode: string; title: string };
+}
 export interface EpisodePlayback {
   url: string;
   type?: string;
@@ -11,14 +16,16 @@ export interface EpisodePlayback {
   sources?: PlaybackSource[];
   episodes?: PlaybackEpisode[];
   episodeNumber?: number;
+  episodeKey?: string;
 }
 
-export function attachEpisodeSelector(art: Artplayer, episodes: PlaybackEpisode[], current: number | undefined, onSelect: (episode: PlaybackEpisode) => Promise<EpisodePlayback>) {
-  const validEpisodes = (items: PlaybackEpisode[]) => [...new Map(items.filter(episode => Number.isSafeInteger(episode?.number) && episode.number > 0 && typeof episode.title === 'string').map(episode => [episode.number, episode])).values()].sort((a, b) => a.number - b.number);
+export function attachEpisodeSelector(art: Artplayer, episodes: PlaybackEpisode[], current: number | undefined, onSelect: (episode: PlaybackEpisode) => Promise<EpisodePlayback>, currentKey?: string) {
+  const identity = (episode: PlaybackEpisode) => episode.key || String(episode.number);
+  const validEpisodes = (items: PlaybackEpisode[]) => [...new Map(items.filter(episode => Number.isSafeInteger(episode?.number) && episode.number > 0 && typeof episode.title === 'string').map(episode => [identity(episode), episode])).values()].sort((a, b) => a.number - b.number);
   let list = validEpisodes(episodes);
   if (!list.length) return () => {};
-  let selected = current ?? list[0].number;
-  let page = Math.max(0, Math.floor(list.findIndex(episode => episode.number === selected) / 100));
+  let selected = currentKey || identity(list.find(episode => episode.number === current) || list[0]);
+  let page = Math.max(0, Math.floor(list.findIndex(episode => identity(episode) === selected) / 100));
   let busy = false;
   let disposed = false;
   const root = document.createElement('div'); root.dataset.crayonEpisodes = '';
@@ -38,16 +45,18 @@ export function attachEpisodeSelector(art: Artplayer, episodes: PlaybackEpisode[
   const controls = attachControlPanel(art, { name: 'crayonEpisodes', position: 'left', root, trigger, panel });
   const render = () => {
     const offset = page * 100;
+    panel.dataset.crayonNamedEpisodes = String(list.some(episode => episode.title.length > 8));
     pages.hidden = list.length <= 100;
     range.textContent = (offset + 1) + '–' + Math.min(offset + 100, list.length) + ' / ' + list.length;
     previous.disabled = busy || page === 0;
     next.disabled = busy || offset + 100 >= list.length;
-    trigger.title = list.find(episode => episode.number === selected)?.title || '选择剧集';
+    trigger.title = list.find(episode => identity(episode) === selected)?.title || '选择剧集';
     panel.setAttribute('aria-busy', String(busy));
     grid.replaceChildren(...list.slice(offset, offset + 100).map(episode => {
       const button = document.createElement('button'); button.type = 'button'; button.textContent = episode.title;
       button.dataset.episodeNumber = String(episode.number); button.disabled = busy;
-      button.setAttribute('role', 'menuitemradio'); button.setAttribute('aria-checked', String(episode.number === selected));
+      button.dataset.episodeKey = identity(episode);
+      button.setAttribute('role', 'menuitemradio'); button.setAttribute('aria-checked', String(identity(episode) === selected));
       return button;
     }));
   };
@@ -58,17 +67,17 @@ export function attachEpisodeSelector(art: Artplayer, episodes: PlaybackEpisode[
   const select = async (event: Event) => {
     event.stopPropagation();
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-episode-number]');
-    const episode = list.find(episode => episode.number === Number(button?.dataset.episodeNumber));
+    const episode = list.find(episode => identity(episode) === button?.dataset.episodeKey);
     if (!episode || busy) return;
-    if (episode.number === selected) { controls.close(); trigger.focus(); return; }
+    if (identity(episode) === selected) { controls.close(); trigger.focus(); return; }
     busy = true; status.textContent = '正在解析' + episode.title + '…'; render();
     try {
       const result = await onSelect(episode);
       if (disposed) return;
-      selected = result.episodeNumber ?? episode.number;
+      selected = result.episodeKey || (result.episodeNumber !== undefined && result.episodeNumber !== episode.number ? String(result.episodeNumber) : identity(episode));
       const updated = validEpisodes(result.episodes || []);
       if (updated.length) list = updated;
-      page = Math.max(0, Math.floor(list.findIndex(item => item.number === selected) / 100));
+      page = Math.max(0, Math.floor(list.findIndex(item => identity(item) === selected) / 100));
       status.textContent = ''; controls.close(); trigger.focus();
     } catch (error) {
       if (disposed) return;
