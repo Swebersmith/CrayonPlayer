@@ -83,6 +83,16 @@ it.each([false,true])('selects the embedded layout before rendering or loading t
 });
 
 const flushResolution=async()=>{for(let i=0;i<5;i++)await Promise.resolve();};
+it('shows filtered search results and the AI removal count',async()=>{
+  global.fetch=jest.fn(async()=>({ok:true,json:async()=>({kind:'search',items:[{id:'ruyi:1',title:'走马上任',year:'2026',sourceName:'如意'}],aiFilter:{status:'filtered',removedCount:19}})})) as jest.Mock;
+  require('../demo');
+  document.querySelector<HTMLInputElement>('#source-url')!.value='走马上任';
+  document.querySelector('#source-form')!.dispatchEvent(new Event('submit',{cancelable:true}));
+  await flushResolution();
+  expect(document.querySelectorAll('.catalog-card')).toHaveLength(1);
+  expect(document.querySelector('#status')!.textContent).toContain('AI 已过滤 19 条无关候选');
+  expect(document.querySelector('#catalog-results')!.textContent).toContain('AI 已筛选');
+});
 it('searches a title, opens source lines and plays a selected episode',async()=>{
   const media='https://cdn.demo.site/episode.m3u8';
   global.fetch=jest.fn(async(path:string)=>({ok:true,json:async()=>path.startsWith('/api/resolve')

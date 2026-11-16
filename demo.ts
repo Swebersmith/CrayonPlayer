@@ -227,9 +227,10 @@ async function searchTitle(value: string) {
     const exactMatch = (group: CatalogGroup) => group.key.split('|')[0] === queryKey;
     searchGroups.sort((a, b) => Number(exactMatch(b)) - Number(exactMatch(a)));
     const providers = new Set(searchGroups.flatMap(group => group.items.map(item => item.sourceId || item.id.split(':')[0])));
-    searchSummary = searchGroups.length + ' 部影片 · ' + providers.size + ' 个采集源';
+    searchSummary = searchGroups.length + ' 部影片 · ' + providers.size + ' 个采集源' + (data.aiFilter?.status === 'filtered' ? ' · AI 已筛选' : '');
     renderSearchResults();
-    status.textContent = `找到 ${searchGroups.length} 部影片。${data.warning || ''}`;
+    const filtered = data.aiFilter?.status === 'filtered' ? `AI 已过滤 ${data.aiFilter.removedCount} 条无关候选。` : '';
+    status.textContent = `找到 ${searchGroups.length} 部影片。${filtered}${data.warning || ''}`;
     results.scrollIntoView?.({ block: 'start', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   } catch (error) { if (version === generation) showError((error as Error).message); }
 }
