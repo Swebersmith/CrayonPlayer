@@ -2,6 +2,11 @@ import type Artplayer from 'artplayer';
 import type { Setting } from 'artplayer/types/setting';
 
 type PlayerOptions = ConstructorParameters<typeof Artplayer>[0];
+const PORTRAIT_KEY = 'crayon-player-portrait-simple';
+const PORTRAIT_CHANGE = 'crayon-portrait-controls-change';
+function simplePortrait() {
+  try { return localStorage.getItem(PORTRAIT_KEY) !== '0'; } catch { return true; }
+}
 type PipVideo = HTMLVideoElement & {
   webkitSupportsPresentationMode?: (mode: string) => boolean;
   webkitSetPresentationMode?: (mode: string) => void;
@@ -11,6 +16,16 @@ type PipVideo = HTMLVideoElement & {
 /** Secondary controls stay available in settings when the control row is small. */
 export function responsiveSettings(options: PlayerOptions): Setting[] {
   const settings: Setting[] = [];
+  settings.push({
+    name: 'crayonPortraitControls', html: '竖屏精简控制栏', switch: simplePortrait(),
+    tooltip: '收起投屏、速率与下一集按钮',
+    onSwitch(item) {
+      const enabled = !item.switch;
+      try { localStorage.setItem(PORTRAIT_KEY, enabled ? '1' : '0'); } catch { /* Optional storage. */ }
+      this.template.$player.dispatchEvent(new CustomEvent(PORTRAIT_CHANGE, { detail: enabled }));
+      return enabled;
+    },
+  });
   if (options.pip) settings.push({
     name: 'crayonCompactPip', html: '画中画',
     async onClick() {
@@ -90,6 +105,9 @@ const styles = `
 .art-video-player[data-crayon-tiny=true] .art-control-crayonNetworkSpeed{width:58px!important;max-width:58px!important;padding:0 2px!important}
 .art-video-player[data-crayon-tiny=true][data-crayon-more=true] .art-control-crayonCast{display:none!important}
 .art-video-player[data-crayon-tiny=true][data-crayon-cast=true] [data-name="crayonCompactCast"]{display:flex}
+.art-video-player[data-crayon-portrait-simple=true] .art-control-crayonCast,.art-video-player[data-crayon-portrait-simple=true] .art-control-crayonNetworkSpeed,.art-video-player[data-crayon-portrait-simple=true] .art-control-nextEpisode{display:none!important}
+.art-video-player[data-crayon-portrait-simple=true][data-crayon-cast=true] [data-name="crayonCompactCast"]{display:flex}
+.art-video-player[data-crayon-portrait-simple=true] .art-control{padding-left:4px;padding-right:4px}
 .art-video-player[data-crayon-wrap=true] .art-controls{height:auto;min-height:var(--art-control-height);flex-wrap:wrap}
 .art-video-player[data-crayon-wrap=true] .art-controls-left,.art-video-player[data-crayon-wrap=true] .art-controls-right{height:auto;min-height:var(--art-control-height);flex-wrap:wrap;flex-basis:100%}
 .art-video-player[data-crayon-responsive] [data-crayon-cast-panel]{box-sizing:border-box;max-height:var(--art-settings-max-height);max-width:calc(100% - 2 * var(--art-padding) - var(--crayon-safe-left) - var(--crayon-safe-right))!important;overflow-y:auto;overscroll-behavior:contain;right:calc(var(--art-padding) + var(--crayon-safe-right))!important;bottom:calc(var(--crayon-controls-height) + var(--crayon-safe-bottom) + 6px)!important}
@@ -106,13 +124,14 @@ export function attachResponsiveLayout(art: Artplayer) {
   style.dataset.crayonResponsiveStyle = '';
   style.textContent = styles;
   root.appendChild(style);
-  const attributes = ['crayonResponsive', 'crayonCompact', 'crayonTiny', 'crayonMore', 'crayonNativeAirplay', 'crayonCast', 'crayonWrap', 'crayonShallow'];
+  const attributes = ['crayonResponsive', 'crayonCompact', 'crayonTiny', 'crayonMore', 'crayonNativeAirplay', 'crayonCast', 'crayonWrap', 'crayonShallow', 'crayonPortraitSimple'];
   const previous = attributes.map(name => root.dataset[name]);
   const variables = ['--art-settings-max-height', '--crayon-player-height', '--crayon-controls-height'];
   const previousVariables = variables.map(name => [root.style.getPropertyValue(name), root.style.getPropertyPriority(name)]);
   root.dataset.crayonResponsive = 'true';
   root.dataset.crayonMore = String(!!art.option.setting && !!art.setting.find('crayonCompactCast'));
   let rotatedFullscreen = false;
+  let portraitSimple = simplePortrait();
   const sync = () => {
     if (!art.fullscreenWeb) rotatedFullscreen = false;
     else if (root.classList.contains('art-auto-orientation')) rotatedFullscreen = true;
@@ -123,6 +142,7 @@ export function attachResponsiveLayout(art: Artplayer) {
     const compact = width <= 640;
     const changed = root.dataset.crayonCompact !== String(compact);
     root.dataset.crayonCompact = String(compact);
+    root.dataset.crayonPortraitSimple = String(compact && portraitSimple && root.dataset.crayonMore === 'true' && window.innerHeight >= window.innerWidth && !art.isRotate);
     root.dataset.crayonTiny = String(width < 320);
     root.dataset.crayonShallow = String(height < 220);
     root.dataset.crayonNativeAirplay = String(!!root.querySelector('.art-control-airplay'));
@@ -159,6 +179,8 @@ export function attachResponsiveLayout(art: Artplayer) {
     } else sync();
   };
   const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(sync);
+  const portraitChanged = (event: Event) => { portraitSimple = (event as CustomEvent<boolean>).detail; sync(); };
+  root.addEventListener(PORTRAIT_CHANGE, portraitChanged);
   observer?.observe(root);
   const mutation = controls && typeof MutationObserver !== 'undefined' ? new MutationObserver(sync) : undefined;
   if (controls) mutation?.observe(controls, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['style', 'hidden'] });
@@ -167,6 +189,7 @@ export function attachResponsiveLayout(art: Artplayer) {
   sync();
   return () => {
     observer?.disconnect(); mutation?.disconnect();
+    root.removeEventListener(PORTRAIT_CHANGE, portraitChanged);
     art.off('resize', sync); window.removeEventListener('resize', viewportChanged);
     style.remove();
     attributes.forEach((name, index) => { if (previous[index] === undefined) delete root.dataset[name]; else root.dataset[name] = previous[index]; });

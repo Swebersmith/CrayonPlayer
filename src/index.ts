@@ -7,6 +7,7 @@ import { createMediaPreparer, MediaPreparationError, mediaPreparationNotice, Med
 import { EnhancementOptions } from './plugin';
 import { attachVodFile, attachVodHls, attachVodRecovery, vodFilteredTime, vodSourceDuration, vodSourceTime } from './vod-playback';
 import { sourceToFilteredTime } from './vod-segment-filter';
+import { resolverMediaUrl } from './vod-ad-filter';
 import { PLAYBACK_POLICY_CHANGE, relayModePreference, saveRelayModePreference, saveServerRelayPreference, serverRelayPreference } from './relay-settings';
 import { attachVideoLibrary, VideoLibraryOptions, VideoLibraryController } from './library';
 import { attachSourceSelector, PlaybackSource } from './source-selector';
@@ -210,8 +211,15 @@ export function createCrayonPlayer(options: CrayonPlayerOptions): CrayonPlayer {
   }, {
     ...options.enhancements,
     casting: options.enhancements?.casting === false ? false : {
-      getSource: () => ({ url: sourceUrl(), title: art.title, currentTime: vodSourceTime(art.video) }),
+      getSource: () => {
+        const url = resolverMediaUrl(sourceUrl(), blocked);
+        const resolved = resolverMediaUrl(sourceUrl(), true) !== resolverMediaUrl(sourceUrl(), false);
+        return { url, title: art.title, currentTime: resolved ? art.currentTime : vodSourceTime(art.video) };
+      },
       getHint: () => {
+        if (resolverMediaUrl(sourceUrl(), true) !== resolverMediaUrl(sourceUrl(), false)) return blocked
+          ? '电视使用统一解析后端的去广告清单。'
+          : '去广告已关闭，电视使用完整清单。';
         if (!relay) return blocked ? '服务器中转已关闭；本机去广告仅在当前设备生效，电视直连原始片源。' : '服务器中转已关闭；电视需能直接访问原始片源。';
         if (relayMode === 'playlist') {
           if (!hlsSource()) return '仅清单中转；当前文件由电视直连片源，不进行清单去广告。';

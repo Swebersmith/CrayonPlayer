@@ -1,6 +1,14 @@
 import { attachGestures } from '../src/gestures';
 import { fakeArt, touch } from './helpers';
 
+function fingers(target: EventTarget, type: string, points: [number, number][]) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'touches', { value: points.map(([clientX, clientY], identifier) => ({ clientX, clientY, identifier })) });
+  Object.defineProperty(event, 'changedTouches', { value: [] });
+  target.dispatchEvent(event);
+  return event;
+}
+
 let art: ReturnType<typeof fakeArt>;
 let dispose: () => void;
 beforeEach(() => { jest.useFakeTimers(); art = fakeArt(); art.volume = .5; dispose = attachGestures(art); });
@@ -81,4 +89,36 @@ it('does not seek or accelerate live streams and removes all listeners', () => {
   art.option.isLive = true; tap(350); tap(350); expect(art.currentTime).toBe(50);
   touch(art.video, 'touchstart', 350); jest.advanceTimersByTime(600); expect(art.playbackRate).toBe(1.25);
   dispose(); expect(touch(art.video, 'touchstart', 350).defaultPrevented).toBe(false);
+});
+
+it('pinches continuously, pans with two fingers, and suppresses seeking and taps through final release', () => {
+  touch(art.video, 'touchstart', 150);
+  fingers(art.video, 'touchstart', [[150, 100], [250, 100]]);
+  fingers(art.video, 'touchmove', [[100, 120], [300, 120]]);
+  expect(art.video.style.scale).toBe('2');
+  const before = art.video.style.translate;
+  fingers(art.video, 'touchmove', [[120, 130], [320, 130]]);
+  expect(art.video.style.translate).not.toBe(before);
+  fingers(art.video, 'touchend', [[120, 130]]);
+  fingers(art.video, 'touchmove', [[300, 100]]);
+  fingers(art.video, 'touchend', []);
+  jest.advanceTimersByTime(700);
+  expect(art.currentTime).toBe(50);
+  expect(art.playbackRate).toBe(1.25);
+  expect(art.controls.toggle).not.toHaveBeenCalled();
+  expect(art.video.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))).toBe(false);
+  art.template.$player.dispatchEvent(new Event('crayon-reset-video-view'));
+  expect(art.video.style.scale).toBe('');
+  expect(art.video.style.translate).toBe('');
+});
+
+it('maps two-finger movement to rotated fullscreen and restores styles on disposal', () => {
+  art.isRotate = true;
+  fingers(art.video, 'touchstart', [[100, 100], [200, 100]]);
+  fingers(art.video, 'touchmove', [[120, 130], [220, 130]]);
+  expect(art.video.style.translate).toBe('30px -20px');
+  fingers(art.video, 'touchend', []);
+  dispose();
+  expect(art.video.style.translate).toBe('');
+  expect(art.video.style.scale).toBe('');
 });

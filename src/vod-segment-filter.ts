@@ -41,8 +41,22 @@ function attributes(line: string): Record<string, string> {
   return result;
 }
 
+// Inspect the upstream address while retaining the signed playback URI intact.
+function mediaIdentity(uri: string, baseUrl: string): URL {
+  let url = new URL(uri, baseUrl);
+  for (let depth = 0; depth < 4; depth++) {
+    if (!/^\/api\/(?:jiexi|player)\/resolved-media$/.test(url.pathname)) break;
+    const original = url.searchParams.get('url');
+    if (!original) break;
+    const next = new URL(original);
+    if (next.protocol !== 'https:') break;
+    url = next;
+  }
+  return url;
+}
+
 function directory(uri: string, baseUrl: string): string {
-  const url = new URL(uri, baseUrl);
+  const url = mediaIdentity(uri, baseUrl);
   return url.origin + url.pathname.slice(0, url.pathname.lastIndexOf('/'));
 }
 
@@ -155,7 +169,7 @@ function parsePlaylist(content: string, baseUrl: string) {
     // Check every URI in the bounded group, never an arbitrary "ad" substring.
     try {
       const path = decodeURIComponent(
-        new URL(segment.uri.trim(), baseUrl).pathname
+        mediaIdentity(segment.uri.trim(), baseUrl).pathname
       );
       group.explicitAdInsertion &&=
         /(?:^|\/)video\/adjump\/time\/[^/]+\.ts$/i.test(path);
@@ -211,12 +225,12 @@ function isRuyiInsertion(
     !values.slice(0, -1).every(value => value === 4)
   ) return false;
   try {
-    const url = new URL(baseUrl);
+    const url = mediaIdentity(baseUrl, baseUrl);
     if (!/^(?:cdn\d*|svip)\.ryi?play\d+\.com$/i.test(url.hostname) ||
         !/^\/\d{8}\/[^/]+\/2000k\/hls\/index\.m3u8$/.test(url.pathname))
       return false;
     if (!group.segments.every(segment => {
-      const media = new URL(segment.uri.trim(), url);
+      const media = mediaIdentity(segment.uri.trim(), url.href);
       return directory(media.href, baseUrl) === directory(baseUrl, baseUrl) &&
         /^[a-f\d]{32}\.ts$/i.test(media.pathname.split('/').pop() || '');
     })) return false;

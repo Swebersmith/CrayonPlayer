@@ -1,7 +1,7 @@
 import Hls from 'hls.js';
 
 import { configureInlineVideo } from './inline-video';
-import { vodAdLoader } from './vod-ad-filter';
+import { vodAdLoader, resolverMediaUrl } from './vod-ad-filter';
 import { prefetchPreference } from './network-settings';
 import { NetworkOptions } from './network-settings';
 import { VodNetwork } from './vod-network';
@@ -103,12 +103,12 @@ export function attachVodHls(
     maxBufferHole: 0.3,
     fLoader: network.fragmentLoader,
     // Filter actual ad segment groups while preserving retained HLS state.
-    loader: blockAds && !preparedPlayback
+    loader: !preparedPlayback && (blockAds || resolverMediaUrl(url, true) !== resolverMediaUrl(url, false))
       ? vodAdLoader(Hls.DefaultConfig.loader, result => {
           if (video.hls !== hls) return;
           video.vodAdFilter = result;
           onAdFilter?.(result);
-        })
+        }, blockAds)
       : Hls.DefaultConfig.loader,
   });
   video.hls = hls;

@@ -3,6 +3,27 @@ import Hls from 'hls.js';
 
 import { vodAdLoader } from '../src/vod-ad-filter';
 
+it.each([true, false])('uses backend cut metadata and propagates the ad switch through signed requests (%s)', blockAds => {
+  const removed = [{ start: 300, end: 326.04 }];
+  const playlist = '#EXTM3U\n#CRAYON-AD-FILTER:' + JSON.stringify({ version: 1, originalDuration: 626.04, removed, reason: 'filtered' }) + '\n#EXTINF:6,\nhttps://media.demo.site/0.ts\n#EXT-X-ENDLIST';
+  const onFiltered = jest.fn();
+  const load = jest.spyOn(Hls.DefaultConfig.loader.prototype as Loader<LoaderContext>, 'load').mockImplementation(function (context, _config, callbacks) {
+    callbacks.onSuccess({ url: context.url, data: playlist }, this.stats, context, {});
+  });
+  const LoaderClass = vodAdLoader(Hls.DefaultConfig.loader, onFiltered, blockAds);
+  const loader = new LoaderClass(Hls.DefaultConfig);
+  const context = { type: 'manifest', responseType: 'text', url: 'https://player.demo.site/api/jiexi/resolved-media?url=https%3A%2F%2Fmedia.demo.site%2Findex.m3u8&sig=capability&exp=9999999999' } as LoaderContext;
+  const success = jest.fn();
+  try {
+    loader.load(context, {} as any, { onSuccess: success, onError: jest.fn(), onTimeout: jest.fn() });
+    expect(new URL(context.url).searchParams.get('ads')).toBe(blockAds ? '1' : '0');
+    const result = onFiltered.mock.calls[0][0];
+    expect(result.removed).toEqual(blockAds ? removed : []);
+    expect(result.originalDuration).toBe(blockAds ? 626.04 : 0);
+    expect(success.mock.calls[0][0].data).toBe(playlist);
+  } finally { loader.destroy(); load.mockRestore(); }
+});
+
 it.each(['manifest', 'level', 'audioTrack', 'subtitleTrack'])(
   'does not strip valid discontinuities from an ambiguous short %s playlist',
   (type) => {

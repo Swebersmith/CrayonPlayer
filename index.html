@@ -43,6 +43,9 @@
         </div>
         <button class="load" type="submit">搜索 / 播放<span aria-hidden="true">↗</span></button>
       </form>
+      <label class="resolver-choice" for="resolver-provider">网页解析
+        <select id="resolver-provider"><option value="auto">自动比选</option><option value="cms">采集源</option><option value="ql">QL · 麒麟</option></select>
+      </label>
       <div class="player-frame"><div id="player"></div></div>
       <div id="status" role="status" aria-live="polite"></div>
       <section id="catalog-results" aria-label="搜索结果与分集" hidden></section>

@@ -9,9 +9,12 @@ const entry = playbackEntry(window.location.href, window.self !== window.top);
 const status = document.querySelector<HTMLDivElement>('#status')!;
 const form = document.querySelector<HTMLFormElement>('#source-form')!;
 const input = document.querySelector<HTMLInputElement>('#source-url')!;
+const resolverProvider = document.querySelector<HTMLSelectElement>('#resolver-provider')!;
+const requestedParser = new URL(window.location.href).searchParams.get('parser');
+if (requestedParser && ['auto', 'cms', 'ql'].includes(requestedParser)) resolverProvider.value = requestedParser;
 const results = document.querySelector<HTMLElement>('#catalog-results')!;
 interface CatalogDetail extends CatalogItem { lines: { id: string; name: string; episodes: { id: string; title: string; url: string; number?: number }[] }[] }
-type EpisodeRequest = { url: string } | { id: string };
+type EpisodeRequest = { url: string; parser?: string } | { id: string };
 interface ResolvedPlayback {
   url: string; type?: string; direct?: boolean; routes?: PlaybackSource[]; episodes?: PlaybackEpisode[]; selectedEpisodeNumber?: number;
   match?: { title: string; episodeTitle: string; sourceName: string };
@@ -90,8 +93,9 @@ async function resolvePage(source: string, version: number) {
   // The embedded /parse entry hides page chrome; show progress in its status area.
   showError('正在解析视频页面并比较片源清晰度与连接速度…');
   try {
-    const data = await requestPlayback({ url: source }, version);
-    if (data) loadResolved(data, source, { url: source });
+    const request = { url: source, parser: resolverProvider.value };
+    const data = await requestPlayback(request, version);
+    if (data) loadResolved(data, source, request);
   } catch (error) {
     if (version !== generation) return;
     showError((error as Error).message);
@@ -229,7 +233,10 @@ function start(url: string) {
   pending?.abort(); pending = undefined;
   try {
     const source = pageSource(url);
-    if (source) { void resolvePage(source, version); return; }
+    if (source) {
+      if (new URL(url).hostname === 'svip.qlplayer.cyou') resolverProvider.value = 'ql';
+      void resolvePage(source, version); return;
+    }
     loadMedia(url);
   } catch (error) { showError((error as Error).message); }
 }

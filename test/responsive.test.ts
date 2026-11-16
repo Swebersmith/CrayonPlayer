@@ -2,6 +2,36 @@ import { attachResponsiveLayout, responsiveSettings } from '../src/responsive';
 import { attachProgress, formatCompactDuration } from '../src/progress';
 import { fakeArt } from './helpers';
 
+it('allows portrait controls to be expanded, persists the choice and restores full landscape controls', () => {
+  const art = fakeArt();
+  art.option.setting = true;
+  art.setting.find = jest.fn().mockReturnValue({});
+  const root = art.template.$player;
+  Object.defineProperty(root, 'clientWidth', { value: 360 });
+  Object.defineProperty(root, 'clientHeight', { value: 203 });
+  const oldWidth = window.innerWidth, oldHeight = window.innerHeight;
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: 844 });
+  const dispose = attachResponsiveLayout(art);
+  try {
+    expect(root.dataset.crayonPortraitSimple).toBe('true');
+    const setting = responsiveSettings(art.option).find(item => item.name === 'crayonPortraitControls')!;
+    expect(setting.onSwitch!.call(art, { switch: true } as any)).toBe(false);
+    expect(root.dataset.crayonPortraitSimple).toBe('false');
+    expect(localStorage.getItem('crayon-player-portrait-simple')).toBe('0');
+    setting.onSwitch!.call(art, { switch: false } as any);
+    Object.defineProperty(window, 'innerWidth', { value: 844 });
+    Object.defineProperty(window, 'innerHeight', { value: 390 });
+    window.dispatchEvent(new Event('resize'));
+    expect(root.dataset.crayonPortraitSimple).toBe('false');
+  } finally {
+    dispose(); localStorage.removeItem('crayon-player-portrait-simple');
+    Object.defineProperty(window, 'innerWidth', { value: oldWidth });
+    Object.defineProperty(window, 'innerHeight', { value: oldHeight });
+    document.body.innerHTML = '';
+  }
+});
+
 it.each([[0,'0:00'],[59,'0:59'],[60,'1:00'],[1652,'27:32'],[4613,'1:16:53'],[Infinity,'0:00']])('formats compact mobile time %s', (value, expected) => {
   expect(formatCompactDuration(value as number)).toBe(expected);
 });

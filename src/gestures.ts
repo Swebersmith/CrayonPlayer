@@ -1,4 +1,5 @@
 import type Artplayer from 'artplayer';
+import type { Setting } from 'artplayer/types/setting';
 
 import { seekAndSync, setScrubbing } from './progress';
 
@@ -13,6 +14,18 @@ const clamp = (value: number, min: number, max: number) =>
 
 type Zone = 'left' | 'center' | 'right';
 
+const RESET_VIEW = 'crayon-reset-video-view';
+export function videoViewSetting(): Setting {
+  return {
+    name: 'crayonResetView', html: '画面复位', tooltip: '双指缩放、移动画面',
+    onClick() {
+      this.template.$player.dispatchEvent(new Event(RESET_VIEW));
+      this.notice.show = '已恢复画面';
+      return '双指缩放、移动画面';
+    },
+  };
+}
+
 /** Own only touches on the picture. Native controls, mouse and lock stay usable. */
 export function attachGestures(art: Artplayer, options: GestureOptions = {}) {
   const root = art.template.$player;
@@ -20,7 +33,25 @@ export function attachGestures(art: Artplayer, options: GestureOptions = {}) {
   const seekSeconds = options.seekSeconds ?? 10;
   const holdRate = options.holdRate ?? 2;
   const originalTouchAction = video.style.touchAction;
+  const originalTranslate = video.style.translate || '';
+  const originalScale = video.style.scale || '';
   video.style.touchAction = 'none';
+  let view = { scale: 1, x: 0, y: 0 };
+  let pinch: { ids: number[]; distance: number; x: number; y: number; scale: number; offsetX: number; offsetY: number } | undefined;
+  let finishingPinch = false;
+  const point = (touches: TouchList) => {
+    const a = touches[0], b = touches[1];
+    const rect = root.getBoundingClientRect();
+    const x = (a.clientX + b.clientX) / 2 - (rect.left + rect.width / 2);
+    const y = (a.clientY + b.clientY) / 2 - (rect.top + rect.height / 2);
+    return { x: art.isRotate ? y : x, y: art.isRotate ? -x : y,
+      distance: Math.max(1, Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)) };
+  };
+  const resetView = () => {
+    view = { scale: 1, x: 0, y: 0 };
+    video.style.translate = originalTranslate;
+    video.style.scale = originalScale;
+  };
   let holdTimer: ReturnType<typeof setTimeout> | undefined;
   let tapTimer: ReturnType<typeof setTimeout> | undefined;
   let lastTap: { x: number; y: number; zone: Zone; time: number } | undefined;
@@ -48,6 +79,8 @@ export function attachGestures(art: Artplayer, options: GestureOptions = {}) {
     restoreRate();
     if (active?.direction === 'horizontal') setScrubbing(art, false);
     active = undefined;
+    pinch = undefined;
+    finishingPinch = false;
     clearTap();
   };
   const seek = (time: number) => {
@@ -56,6 +89,16 @@ export function attachGestures(art: Artplayer, options: GestureOptions = {}) {
   };
   const start = (event: TouchEvent) => {
     if (!picture(event.target) || art.isLock) return;
+    if (finishingPinch) { stop(event); return; }
+    if (event.touches.length === 2) {
+      cancel();
+      stop(event);
+      const center = point(event.touches);
+      pinch = { ...center, ids: Array.from(event.touches, touch => touch.identifier),
+        scale: view.scale, offsetX: view.x, offsetY: view.y };
+      suppressClickUntil = Date.now() + 1000;
+      return;
+    }
     if (event.touches.length !== 1) { cancel(); stop(event); return; }
     cancelActive();
     stop(event);
@@ -87,6 +130,20 @@ export function attachGestures(art: Artplayer, options: GestureOptions = {}) {
     active = undefined;
   }
   const move = (event: TouchEvent) => {
+    if (pinch || finishingPinch) {
+      stop(event);
+      if (art.isLock || event.touches.length !== 2 || !pinch) return;
+      if (!Array.from(event.touches).every(touch => pinch!.ids.includes(touch.identifier))) return;
+      const center = point(event.touches);
+      const scale = clamp(pinch.scale * center.distance / pinch.distance, 0.1, 10);
+      const ratio = scale / pinch.scale;
+      view = { scale, x: center.x - (pinch.x - pinch.offsetX) * ratio,
+        y: center.y - (pinch.y - pinch.offsetY) * ratio };
+      video.style.translate = `${view.x}px ${view.y}px`;
+      video.style.scale = String(view.scale);
+      art.notice.show = `画面 ${Math.round(scale * 100)}% · 双指移动`;
+      return;
+    }
     if (!active) return;
     stop(event);
     if (event.touches.length !== 1 || art.isLock) { cancel(); return; }
@@ -121,6 +178,13 @@ export function attachGestures(art: Artplayer, options: GestureOptions = {}) {
     }
   };
   const end = (event: TouchEvent) => {
+    if (pinch || finishingPinch) {
+      stop(event);
+      pinch = undefined;
+      finishingPinch = event.touches.length > 0;
+      suppressClickUntil = Date.now() + 800;
+      return;
+    }
     if (!active) return;
     if (!Array.from(event.changedTouches).some(t => t.identifier === active?.id)) return;
     stop(event);
@@ -166,10 +230,12 @@ export function attachGestures(art: Artplayer, options: GestureOptions = {}) {
   window.addEventListener('blur', cancel);
   document.addEventListener('visibilitychange', visibility);
   video.addEventListener('loadstart', cancel);
+  root.addEventListener(RESET_VIEW, resetView);
   art.on('lock', cancel);
   return () => {
     cancel();
     video.style.touchAction = originalTouchAction;
+    resetView();
     root.removeEventListener('touchstart', start, true);
     root.removeEventListener('touchmove', move, true);
     window.removeEventListener('touchend', end, true);
@@ -180,6 +246,7 @@ export function attachGestures(art: Artplayer, options: GestureOptions = {}) {
     window.removeEventListener('blur', cancel);
     document.removeEventListener('visibilitychange', visibility);
     video.removeEventListener('loadstart', cancel);
+    root.removeEventListener(RESET_VIEW, resetView);
     art.off('lock', cancel);
   };
 }

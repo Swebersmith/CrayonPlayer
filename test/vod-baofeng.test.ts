@@ -5,6 +5,20 @@ import { join } from 'path';
 
 import { filterVodAdSegments } from '../src/vod-segment-filter';
 
+it('recognizes Baofeng insertions after unified resolver signing and preserves programme capabilities', () => {
+  const original = readFileSync(join(__dirname, '__fixtures__/baofeng/series.m3u8'), 'utf8');
+  const base = 'https://source.example/video/episode/index.m3u8';
+  const relay = (uri: string) => 'https://player.demo.site/api/jiexi/resolved-media?' + new URLSearchParams({ url: new URL(uri, base).href, exp: '9999999999', sig: 'signed-capability' });
+  const signed = original.split(/\r?\n/).map(line => line && !line.startsWith('#') ? relay(line) : line).join('\n');
+  const result = filterVodAdSegments(signed, relay(base));
+  expect(result.removed).toEqual(filterVodAdSegments(original, base).removed);
+  expect(result.removed).toHaveLength(2);
+  const retained = result.playlist.split('\n').filter(line => line && !line.startsWith('#'));
+  expect(retained).toHaveLength(680);
+  expect(retained.every(line => signed.includes(line))).toBe(true);
+  expect(retained.every(line => !new URL(line).searchParams.get('url')!.includes('/adjump/time/'))).toBe(true);
+});
+
 // Captured from the public Baofeng API's movie/series playlists, 2026-10-23.
 // Retain real variable programme cadences and both repeated 9-fragment inserts.
 it.each([

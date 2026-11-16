@@ -53,7 +53,7 @@ export function attachPlayerUi(art: Artplayer, showGestures = true) {
   });
   const foot = document.createElement('div');
   foot.dataset.crayonGestureFoot = '';
-  foot.textContent = '左右滑动或拖动进度条调节进度 · 长按加速 · 右侧上下滑调节音量';
+  foot.textContent = '双指缩放、移动画面 · 左右滑动调进度 · 长按加速 · 右侧上下滑调音量';
   foot.style.cssText = 'position:absolute;bottom:18%;width:100%;font-size:11px';
   guide.append(row, foot);
   root.appendChild(guide);

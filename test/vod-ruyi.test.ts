@@ -14,6 +14,16 @@ const urls = [
 ];
 const uris = (text: string) => text.split(/\r?\n/).filter(line => line && !line.startsWith('#'));
 
+it('retains Ruyi identity through signed manifests and segment URLs', () => {
+  const original = fixture('bear-season2.m3u8');
+  const relay = (uri: string) => 'https://player.demo.site/api/jiexi/resolved-media?' + new URLSearchParams({ url: new URL(uri, urls[0]).href, exp: '9999999999', sig: 'signed-capability' });
+  const signed = original.split(/\r?\n/).map(line => line && !line.startsWith('#') ? relay(line) : line).join('\n');
+  const result = filterVodAdSegments(signed, relay(urls[0]));
+  expect(result.removed).toEqual(filterVodAdSegments(original, urls[0]).removed);
+  expect(result.removed).toHaveLength(1);
+  expect(uris(result.playlist).every(line => signed.includes(line))).toBe(true);
+});
+
 // Captured 2026-11-07 from bycj.rytvapi.com. First fragment of all four
 // insertion groups was decoded and visually confirmed as the same gambling ad.
 it.each([
