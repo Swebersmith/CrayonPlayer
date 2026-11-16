@@ -49,3 +49,19 @@ it('supports keyboard selection and closes when controls are hidden', () => {
   trigger.click(); art.emit('control', false);
   expect(root.querySelector<HTMLElement>('[role=menu]')!.hidden).toBe(true);
 });
+
+it('shows unavailable sources with their failure reason and skips them during keyboard selection', () => {
+  art.destroy();
+  const failed = { id: 'ffzy', name: '非凡资源 · ffm3u8', url: '', available: false, reason: '片源返回 HTTP 403' };
+  art = createCrayonPlayer({ container, url: sources[0].url, sources: [sources[0], failed, sources[1]], enhancements: { casting: false } });
+  const root = container.querySelector<HTMLElement>('[data-crayon-sources]')!;
+  root.querySelector<HTMLButtonElement>('button')!.click();
+  const buttons = root.querySelectorAll<HTMLButtonElement>('[role=menuitemradio]');
+  expect(buttons).toHaveLength(3);
+  expect(buttons[1].disabled).toBe(true);
+  expect(buttons[1].textContent).toContain('非凡资源 · ffm3u8 · 片源返回 HTTP 403');
+  buttons[1].click();
+  expect(art.option.url).toBe(sources[0].url);
+  root.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+  expect(document.activeElement).toBe(buttons[2]);
+});

@@ -17,7 +17,7 @@ interface CatalogDetail extends CatalogItem { lines: { id: string; name: string;
 type EpisodeReference = NonNullable<PlaybackEpisode['episodeRef']>;
 type EpisodeRequest = { url: string; parser?: string } | { id: string } | { episodeRef: EpisodeReference };
 interface ResolvedPlayback {
-  url: string; type?: string; direct?: boolean; routes?: PlaybackSource[]; episodes?: PlaybackEpisode[]; selectedEpisodeNumber?: number; selectedEpisodeKey?: string;
+  url: string; type?: string; direct?: boolean; routes?: PlaybackSource[]; unavailableRoutes?: PlaybackSource[]; episodes?: PlaybackEpisode[]; selectedEpisodeNumber?: number; selectedEpisodeKey?: string;
   match?: { title: string; episodeTitle: string; sourceName: string };
 }
 interface EpisodeContext { request: EpisodeRequest; original: string; data: ResolvedPlayback }
@@ -71,9 +71,13 @@ async function requestPlayback(payload: EpisodeRequest & { episode?: number; epi
 }
 function loadResolved(data: ResolvedPlayback, original: string, request: EpisodeRequest) {
   const media = mediaAddress(data.url);
-  loadMedia(media, original, data.type || '', data.direct === true, data.routes, { request, original, data });
+  loadMedia(media, original, data.type || '', data.direct === true, playbackSources(data), { request, original, data });
   results.hidden = true;
   if (data.match) status.textContent = `已匹配 ${data.match.title} · ${data.match.episodeTitle} · ${data.match.sourceName}，点击播放开始观看。`;
+}
+function playbackSources(data: ResolvedPlayback): PlaybackSource[] | undefined {
+  if (!data.routes && !data.unavailableRoutes) return undefined;
+  return [...(data.routes || []), ...(data.unavailableRoutes || [])];
 }
 async function changeEpisode(context: EpisodeContext, episode: PlaybackEpisode): Promise<EpisodePlayback> {
   const version = ++generation;
@@ -86,7 +90,7 @@ async function changeEpisode(context: EpisodeContext, episode: PlaybackEpisode):
     const data = await requestPlayback(payload, version);
     if (!data) throw new Error('选集请求已取消');
     status.textContent = data.match ? `当前播放 ${data.match.title} · ${data.match.episodeTitle} · ${data.match.sourceName}` : episode.title;
-    return { url: data.url, type: data.type, title: data.match?.title, sources: data.routes, episodes: data.episodes,
+    return { url: data.url, type: data.type, title: data.match?.title, sources: playbackSources(data), episodes: data.episodes,
       episodeNumber: data.selectedEpisodeNumber ?? episode.number, episodeKey: data.selectedEpisodeKey ?? episode.key,
       storageKey: `crayon-player-demo:${context.original}:${data.selectedEpisodeKey ?? episode.key ?? episode.number}` };
   } catch (error) { if (version === generation) status.textContent = (error as Error).message; throw error; }

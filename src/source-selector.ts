@@ -1,12 +1,13 @@
 import type Artplayer from 'artplayer';
 import { attachControlPanel } from './control-panel';
 
-export interface PlaybackSource { id: string; name: string; url: string; type?: string }
+export interface PlaybackSource { id: string; name: string; url: string; type?: string; available?: boolean; reason?: string }
 const controlName = 'crayonSources';
 
 export function attachSourceSelector(art: Artplayer, sources: PlaybackSource[], onSelect: (source: PlaybackSource) => void) {
   const routes = sources.filter(source => {
     if (!source || typeof source.id !== 'string' || typeof source.name !== 'string' || typeof source.url !== 'string') return false;
+    if (source.available === false) return true;
     try { const url = new URL(source.url, location.href); return /^https?:$/.test(url.protocol) && !url.username && !url.password; }
     catch { return false; }
   });
@@ -15,12 +16,23 @@ export function attachSourceSelector(art: Artplayer, sources: PlaybackSource[], 
   const trigger = document.createElement('button'); trigger.type = 'button';
   trigger.setAttribute('aria-label', '选择播放线路'); trigger.setAttribute('aria-haspopup', 'menu'); trigger.setAttribute('aria-expanded', 'false');
   const menu = document.createElement('div'); menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', '播放线路'); menu.hidden = true;
-  let selected = Math.max(0, routes.findIndex(route => route.url === art.option.url));
+  const unavailableCount = routes.filter(route => route.available === false).length;
+  if (unavailableCount) {
+    const status = document.createElement('p'); status.dataset.crayonSourceStatus = ''; status.setAttribute('role', 'status');
+    status.textContent = (routes.length - unavailableCount) + ' 条可播放 · ' + unavailableCount + ' 条暂不可用';
+    menu.append(status);
+  }
+  let selected = routes.findIndex(route => route.available !== false && route.url === art.option.url);
+  if (selected < 0) selected = routes.findIndex(route => route.available !== false);
   const buttons = routes.map((source, index) => {
     const button = document.createElement('button'); button.type = 'button'; button.setAttribute('role', 'menuitemradio'); button.dataset.sourceId = source.id;
-    button.textContent = source.name;
+    button.disabled = source.available === false;
+    button.setAttribute('aria-disabled', String(button.disabled));
+    button.textContent = source.name + (button.disabled ? ' · ' + (source.reason || '暂不可用') : '');
+    button.title = button.textContent;
     button.addEventListener('click', event => {
       event.stopPropagation();
+      if (button.disabled) return;
       if (selected !== index) {
         try { onSelect(source); selected = index; update(); }
         catch { art.notice.show = '线路切换失败，请重试'; }
@@ -31,7 +43,7 @@ export function attachSourceSelector(art: Artplayer, sources: PlaybackSource[], 
   });
   function update() {
     trigger.textContent = '线路 ' + (selected + 1) + '/' + routes.length;
-    trigger.title = routes[selected].name;
+    trigger.title = routes[selected]?.name || '暂无可用线路';
     buttons.forEach((button, index) => button.setAttribute('aria-checked', String(index === selected)));
   }
   const controls = attachControlPanel(art, { name: controlName, position: 'right', root, trigger, panel: menu });
@@ -39,8 +51,10 @@ export function attachSourceSelector(art: Artplayer, sources: PlaybackSource[], 
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault(); event.stopPropagation();
       if (menu.hidden) { controls.open(); return; }
-      const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-      buttons[(index + (event.key === 'ArrowDown' ? 1 : routes.length - 1)) % routes.length].focus();
+      const enabled = buttons.filter(button => !button.disabled);
+      if (!enabled.length) return;
+      const index = enabled.indexOf(document.activeElement as HTMLButtonElement);
+      enabled[(index + (event.key === 'ArrowDown' ? 1 : enabled.length - 1)) % enabled.length].focus();
     }
   };
   root.addEventListener('keydown', key);

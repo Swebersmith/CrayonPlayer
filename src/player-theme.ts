@@ -77,7 +77,9 @@ export function attachPlayerTheme(art: Artplayer) {
 [data-crayon-control-panel] [aria-checked=true]{color:var(--crayon-ink,#fff);background:#ffffff14;box-shadow:inset 0 0 0 1px #ffffff4d}
 [data-crayon-control-panel] button:disabled{opacity:.45;cursor:wait}
 [data-crayon-sources] [role=menu]{width:max-content}
-[data-crayon-sources] [role=menuitemradio]{display:block;width:100%;text-align:left}
+[data-crayon-sources] [role=menuitemradio]{display:block;width:100%;height:auto!important;line-height:1.5!important;text-align:left}
+[data-crayon-sources] button:disabled{cursor:not-allowed}
+[data-crayon-source-status]{margin:4px 12px 8px;font-size:12px;line-height:1.5;opacity:.7;white-space:normal}
 [data-crayon-episode-panel]{display:flex;flex-direction:column;gap:6px}
 [data-crayon-episode-pages]{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:none;font-size:12px}
 [data-crayon-episode-grid]{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:5px;min-height:0;overflow:auto;overscroll-behavior:contain;touch-action:pan-y;scrollbar-width:thin;scrollbar-color:#ffffff40 transparent;padding:2px}

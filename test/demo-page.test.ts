@@ -179,6 +179,18 @@ it('passes ranked playback routes to the player source selector',async()=>{
   create.mock.calls[0][0].onSourceChange(routes[1]);
   expect(document.querySelector('#status')!.textContent).toContain(routes[1].name);
 });
+
+it('passes unavailable routes to the initial and subsequent episode source menus',async()=>{
+  const available={id:'working',name:'可用资源',url:'https://player.example/episode.mp4',type:'mp4'};
+  const blocked={id:'ffzy',name:'非凡资源',url:'',available:false,reason:'片源返回 HTTP 403'};
+  const episode={number:2,title:'第2集',key:'episode:2',episodeRef:{id:'test:1',line:'0',episode:'1',title:'第2集'}};
+  global.fetch=jest.fn(async()=>({ok:true,json:async()=>({url:available.url,type:'mp4',routes:[available],unavailableRoutes:[blocked],episodes:[episode],selectedEpisodeKey:episode.key})})) as jest.Mock;
+  window.history.replaceState(null,'','/?url='+encodeURIComponent('https://v.youku.com/v_show/id_a.html'));
+  require('../demo');await flushResolution();
+  expect(create.mock.calls[0][0].sources).toEqual([available,blocked]);
+  const next=await create.mock.calls[0][0].onEpisodeChange(episode);
+  expect(next.sources).toEqual([available,blocked]);
+});
 it('shows resolver errors as text and explains why static HTML playback needs a server',async()=>{
   require('../demo');
   global.fetch=jest.fn(async()=>({ok:false,json:async()=>({error:{message:'上游视频分片已失效'}})})) as jest.Mock;
