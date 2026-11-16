@@ -55,6 +55,8 @@ it('shows unavailable sources with their failure reason and skips them during ke
   const failed = { id: 'ffzy', name: '非凡资源 · ffm3u8', url: '', available: false, reason: '片源返回 HTTP 403' };
   art = createCrayonPlayer({ container, url: sources[0].url, sources: [sources[0], failed, sources[1]], enhancements: { casting: false } });
   const root = container.querySelector<HTMLElement>('[data-crayon-sources]')!;
+  expect(root.querySelector<HTMLButtonElement>('button')!.textContent).toBe('线路 1/2');
+  expect(root.querySelector<HTMLButtonElement>('button')!.title).toContain('1 条暂不可用');
   root.querySelector<HTMLButtonElement>('button')!.click();
   const buttons = root.querySelectorAll<HTMLButtonElement>('[role=menuitemradio]');
   expect(buttons).toHaveLength(3);
@@ -64,4 +66,6 @@ it('shows unavailable sources with their failure reason and skips them during ke
   expect(art.option.url).toBe(sources[0].url);
   root.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
   expect(document.activeElement).toBe(buttons[2]);
+  buttons[2].click();
+  expect(root.querySelector<HTMLButtonElement>('button')!.textContent).toBe('线路 2/2');
 });

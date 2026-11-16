@@ -42,8 +42,9 @@ export function attachSourceSelector(art: Artplayer, sources: PlaybackSource[], 
     menu.append(button); return button;
   });
   function update() {
-    trigger.textContent = '线路 ' + (selected + 1) + '/' + routes.length;
-    trigger.title = routes[selected]?.name || '暂无可用线路';
+    const available = routes.filter(route => route.available !== false);
+    trigger.textContent = '线路 ' + (available.indexOf(routes[selected]) + 1) + '/' + available.length;
+    trigger.title = (routes[selected]?.name || '暂无可用线路') + (unavailableCount ? ' · ' + unavailableCount + ' 条暂不可用，点击查看原因' : '');
     buttons.forEach((button, index) => button.setAttribute('aria-checked', String(index === selected)));
   }
   const controls = attachControlPanel(art, { name: controlName, position: 'right', root, trigger, panel: menu });

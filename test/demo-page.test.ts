@@ -191,6 +191,20 @@ it('passes unavailable routes to the initial and subsequent episode source menus
   const next=await create.mock.calls[0][0].onEpisodeChange(episode);
   expect(next.sources).toEqual([available,blocked]);
 });
+it('labels the chosen route and explains unavailable sources on success and failure',async()=>{
+  const source='https://v.youku.com/v_show/id_a.html';
+  const route={id:'bfzy',name:'暴风资源',url:'https://player.example/episode.mp4'};
+  const blocked={id:'ffzy',name:'非凡资源',url:'',available:false,reason:'视频分片返回 HTTP 403'};
+  global.fetch=jest.fn(async()=>({ok:true,json:async()=>({url:route.url,routes:[route],unavailableRoutes:[blocked],match:{title:'名侦探柯南国语',episodeTitle:'第1280集',sourceName:'暴风资源'}})})) as jest.Mock;
+  window.history.replaceState(null,'','/?url='+encodeURIComponent(source));
+  require('../demo');await flushResolution();
+  expect(document.querySelector('#status')!.textContent).toContain('当前线路');
+  expect(document.querySelector('#status')!.textContent).toContain('1 条可播放，1 条暂不可用');
+  global.fetch=jest.fn(async()=>({ok:false,json:async()=>({error:{message:'当前分集没有可用线路'},unavailableRoutes:[blocked]})})) as jest.Mock;
+  document.querySelector('#source-form')!.dispatchEvent(new Event('submit',{cancelable:true}));
+  await flushResolution();
+  expect(document.querySelector('#status')!.textContent).toContain('非凡资源（视频分片返回 HTTP 403）');
+});
 it('shows resolver errors as text and explains why static HTML playback needs a server',async()=>{
   require('../demo');
   global.fetch=jest.fn(async()=>({ok:false,json:async()=>({error:{message:'上游视频分片已失效'}})})) as jest.Mock;
