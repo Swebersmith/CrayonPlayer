@@ -26,7 +26,10 @@ it('retains Ruyi identity through signed manifests and segment URLs', () => {
 
 // Captured 2026-11-07 from bycj.rytvapi.com. First fragment of all four
 // insertion groups was decoded and visually confirmed as the same gambling ad.
+// The current sample was captured on 2026-11-17; its 20s package was visually
+// confirmed at 663.04s while the surrounding uniform groups are normal video.
 it.each([
+  ['bear-season2-current.m3u8', 0, [[663.04, 682.92]]],
   ['bear-season2.m3u8', 0, [[529.28, 550.28]]],
   ['bear-season1.m3u8', 1, [[480.36, 499.36]]],
   ['movie.m3u8', 2, [[582.4, 601.4], [3380.36, 3401.36]]],
@@ -50,6 +53,33 @@ it.each([
   }
   expect(uris(result.playlist)).toEqual(retained);
   expect(filterVodAdSegments(result.playlist, urls[index]).playlist).toBe(result.playlist);
+});
+
+it('removes the current 20s package through signed manifests and segment URLs', () => {
+  const original = fixture('bear-season2-current.m3u8');
+  const relay = (uri: string) => 'https://player.demo.site/api/jiexi/resolved-media?' + new URLSearchParams({ url: new URL(uri, urls[0]).href, exp: '9999999999', sig: 'signed-capability' });
+  const signed = original.split(/\r?\n/).map(line => line && !line.startsWith('#') ? relay(line) : line).join('\n');
+  const result = filterVodAdSegments(signed, relay(urls[0]));
+  expect(result.removed).toHaveLength(1);
+  expect(result.removed[0].start).toBeCloseTo(663.04);
+  expect(result.removed[0].end).toBeCloseTo(682.92);
+  expect(uris(result.playlist).every(line => signed.includes(line))).toBe(true);
+});
+
+it('recognizes a 20s package spliced into a six-segment Ruyi timeline', () => {
+  const url = 'https://cdn.ryplay12.com/20261001/42140_c77b26e4/2000k/hls/index.m3u8';
+  const group = (offset: number, values: number[]) => '#EXT-X-DISCONTINUITY\n' + values.map((value, index) =>
+    `#EXTINF:${value.toFixed(3)},\n${(offset * 6 + index).toString(16).padStart(32, '0')}.ts`).join('\n') + '\n';
+  const program = [3, 5, 4.5, 2.5, 6, 3];
+  let content = '#EXTM3U\n#EXT-X-VERSION:3\n';
+  for (let index = 0; index < 6; index++) content += group(index, program);
+  content += group(6, [4, 4, 4, 4, 3.88]);
+  for (let index = 7; index < 10; index++) content += group(index, program);
+  content += '#EXT-X-ENDLIST\n';
+  const result = filterVodAdSegments(content, url);
+  expect(result.removed).toHaveLength(1);
+  expect(result.removed[0].start).toBeCloseTo(144);
+  expect(result.removed[0].end).toBeCloseTo(163.88);
 });
 
 it('retains a real Ruyi movie with ordinary uniform scenes and frequent discontinuities', () => {

@@ -213,17 +213,27 @@ function isRuyiInsertion(
   const group = groups[index];
   const values = group.segments.map(segment => segment.duration);
   // Captured and visually verified on Ruyi episodes and movies: four 4s
-  // fragments + 3s, or five 4s fragments + 1s. Ordinary programme groups
-  // also have frequent discontinuities and 4s fragments, so neither alone
-  // is evidence. Never cut a fixed interval at the reported eight minutes.
-  if (
-    index === 0 || index === groups.length - 1 ||
-    group.segments[0].start < 120 ||
-    total - group.segments[0].start - group.duration < 60 ||
-    !((values.length === 5 && values[4] === 3) ||
-      (values.length === 6 && values[5] === 1)) ||
-    !values.slice(0, -1).every(value => value === 4)
-  ) return false;
+  // fragments + 3s, or five 4s fragments + 1s. The current player packaging
+  // uses a 20s package instead: four 4s fragments + a 3.88s closing frame.
+  // Ordinary programme groups also have frequent discontinuities and 4s
+  // fragments, so neither alone is evidence. Never cut a fixed interval at the
+  // reported eight minutes.
+  if (index === 0 || index === groups.length - 1 ||
+      group.segments[0].start < 120)
+    return false;
+  const remaining = total - group.segments[0].start - group.duration;
+  if (remaining < 15) return false;
+  const legacyPackage =
+    (values.length === 5 && values[4] === 3) ||
+    (values.length === 6 && values[5] === 1);
+  const currentPackage =
+    values.length === 5 && values[4] >= 3.5 && values[4] < 4;
+  // Legacy packages appeared mid-programme; the current 20s package also
+  // appears near the end, so only require a short verified programme tail.
+  if (legacyPackage && remaining < 60) return false;
+  if ((!legacyPackage && !currentPackage) ||
+      !values.slice(0, -1).every(value => value === 4))
+    return false;
   try {
     const url = mediaIdentity(baseUrl, baseUrl);
     if (!/^(?:cdn\d*|svip)\.ryi?play\d+\.com$/i.test(url.hostname) ||
@@ -235,13 +245,23 @@ function isRuyiInsertion(
         /^[a-f\d]{32}\.ts$/i.test(media.pathname.split('/').pop() || '');
     })) return false;
   } catch { return false; }
-  // Require stable programme on both sides with genuinely variable cadence,
-  // not a run of uniform normal scenes or the short tail of a movie.
-  return [groups[index - 1], groups[index + 1]].every(neighbor =>
-    neighbor.directory === group.directory &&
-    neighbor.segments.length >= 5 &&
-    neighbor.segments.filter(segment => segment.duration !== 4).length >= 2
-  );
+  const neighbors = [groups[index - 1], groups[index + 1]];
+  if (!neighbors.every(neighbor =>
+    neighbor.directory === group.directory && neighbor.segments.length >= 4
+  )) return false;
+  const variable = (neighbor: SegmentGroup) =>
+    neighbor.segments.filter(segment => segment.duration !== 4).length >= 2;
+  if (legacyPackage) {
+    // Require stable programme on both sides with genuinely variable cadence,
+    // not a run of uniform normal scenes or the short tail of a movie.
+    return neighbors.every(variable);
+  }
+  // A 20s package keeps its 4s cadence except for the final frame. A natural
+  // uniform scene can share that shape, so require packaging context: either
+  // the package is spliced between differently sized groups, or both
+  // neighbours are a plain run of 4s segments.
+  return neighbors.some(neighbor => neighbor.segments.length !== values.length)
+    || neighbors.every(neighbor => neighbor.segments.every(segment => segment.duration === 4));
 }
 
 function detectGroups(groups: SegmentGroup[], total: number, baseUrl: string): Set<number> {
