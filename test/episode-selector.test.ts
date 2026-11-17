@@ -21,10 +21,12 @@ beforeEach(() => {
 });
 afterEach(() => { if (!art.isDestroy) art.destroy(); container.remove(); jest.restoreAllMocks(); localStorage.clear(); });
 
-it('opens episodes on the left at the current page and switches on the same player from the beginning', async () => {
+it('opens episodes as a left drawer at the current page and switches on the same player from the beginning', async () => {
   expect(trigger().closest('.art-controls-left')).not.toBeNull();
+  expect(panel().dataset.crayonSide).toBe('left');
   trigger().click();
   expect(panel().hidden).toBe(false);
+  expect(container.querySelector('[data-crayon-panel-mask]:not([hidden])')).not.toBeNull();
   expect(panel().querySelectorAll('[role=menuitemradio]')).toHaveLength(100);
   expect(document.activeElement?.textContent).toBe('第102集');
   const video = art.video;
@@ -41,7 +43,7 @@ it('opens episodes on the left at the current page and switches on the same play
   expect(panel().hidden).toBe(true);
   expect(panel().querySelector('[aria-checked=true]')?.textContent).toBe('第103集');
   expect(container.querySelectorAll('[data-crayon-sources]')).toHaveLength(1);
-  expect(container.querySelector('[data-crayon-sources] [role=menuitemradio]')?.textContent).toBe('新集线路');
+  expect(container.querySelector('[data-crayon-source-panel] [role=menuitemradio]')?.textContent).toBe('新集线路');
   art.emit('video:canplay');
   expect(art.currentTime).toBe(0);
 });
@@ -65,7 +67,7 @@ it('shares settings transparency and closes other menus when changing panels', (
   const source = container.querySelector<HTMLButtonElement>('[data-crayon-sources]>button')!;
   source.click();
   expect(panel().hidden).toBe(true);
-  const sourcePanel = container.querySelector<HTMLElement>('[data-crayon-sources] [role=menu]')!;
+  const sourcePanel = container.querySelector<HTMLElement>('[data-crayon-source-panel]')!;
   expect(sourcePanel.hidden).toBe(false);
   art.setting.show = true;
   expect(sourcePanel.hidden).toBe(true);

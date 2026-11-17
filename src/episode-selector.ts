@@ -42,7 +42,7 @@ export function attachEpisodeSelector(art: Artplayer, episodes: PlaybackEpisode[
   grid.setAttribute('role', 'menu'); grid.setAttribute('aria-label', '剧集列表');
   const status = document.createElement('p'); status.dataset.crayonEpisodeStatus = ''; status.setAttribute('role', 'status');
   panel.append(pages, grid, status);
-  const controls = attachControlPanel(art, { name: 'crayonEpisodes', position: 'left', root, trigger, panel });
+  const controls = attachControlPanel(art, { name: 'crayonEpisodes', position: 'left', root, trigger, panel, title: '选集' });
   const render = () => {
     const offset = page * 100;
     panel.dataset.crayonNamedEpisodes = String(list.some(episode => episode.title.length > 8));

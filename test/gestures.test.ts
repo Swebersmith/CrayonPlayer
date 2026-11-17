@@ -1,4 +1,4 @@
-import { attachGestures } from '../src/gestures';
+import { attachGestures, SEEK_SENSITIVITY_CHANGE, SEEK_SENSITIVITY_KEY, seekSensitivitySetting } from '../src/gestures';
 import { fakeArt, touch } from './helpers';
 
 function fingers(target: EventTarget, type: string, points: [number, number][]) {
@@ -12,7 +12,7 @@ function fingers(target: EventTarget, type: string, points: [number, number][]) 
 let art: ReturnType<typeof fakeArt>;
 let dispose: () => void;
 beforeEach(() => { jest.useFakeTimers(); art = fakeArt(); art.volume = .5; dispose = attachGestures(art); });
-afterEach(() => { dispose(); document.body.innerHTML = ''; jest.useRealTimers(); });
+afterEach(() => { dispose(); document.body.innerHTML = ''; localStorage.clear(); jest.useRealTimers(); });
 function tap(x: number) { touch(art.video, 'touchstart', x); touch(art.video, 'touchend', x); }
 
 it('double taps seek by side, clamp to duration, and suppress synthetic click/fullscreen', () => {
@@ -121,4 +121,30 @@ it('maps two-finger movement to rotated fullscreen and restores styles on dispos
   dispose();
   expect(art.video.style.translate).toBe('');
   expect(art.video.style.scale).toBe('');
+});
+
+it('applies the saved and live swipe sensitivity without changing double-tap seek', () => {
+  localStorage.setItem(SEEK_SENSITIVITY_KEY, '1.5');
+  dispose(); dispose = attachGestures(art);
+  touch(art.video, 'touchstart', 150); touch(art.video, 'touchmove', 190, 100);
+  expect(art.currentTime).toBe(65);
+  art.currentTime = 50;
+  art.template.$player.dispatchEvent(new CustomEvent(SEEK_SENSITIVITY_CHANGE, { detail: .5 }));
+  touch(art.video, 'touchstart', 150); touch(art.video, 'touchmove', 190, 100);
+  expect(art.currentTime).toBe(55);
+  art.currentTime = 50;
+  art.template.$player.dispatchEvent(new CustomEvent(SEEK_SENSITIVITY_CHANGE, { detail: 'invalid' }));
+  touch(art.video, 'touchstart', 150); touch(art.video, 'touchmove', 190, 100);
+  expect(art.currentTime).toBe(60);
+  tap(350); jest.advanceTimersByTime(100); tap(350);
+  expect(art.currentTime).toBe(70);
+});
+
+it('persists swipe sensitivity from the settings selector', () => {
+  const setting = seekSensitivitySetting();
+  expect(setting.name).toBe('crayonSeekSensitivity');
+  expect(setting.selector?.find(item => item.default)?.value).toBe(1);
+  setting.onSelect!.call(art, { value: 1.5 } as any, document.createElement('div'), new Event('click'));
+  expect(localStorage.getItem(SEEK_SENSITIVITY_KEY)).toBe('1.5');
+  expect(seekSensitivitySetting().selector?.find(item => item.default)?.value).toBe(1.5);
 });

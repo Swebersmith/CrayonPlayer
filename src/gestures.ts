@@ -7,6 +7,43 @@ export interface GestureOptions {
   seekSeconds?: number;
   holdRate?: number;
   holdDelay?: number;
+  /** Horizontal swipe distance multiplier. 1 maps a full width to 300 seconds. */
+  seekSensitivity?: number;
+}
+
+export const SEEK_SENSITIVITY_KEY = 'crayon-player-seek-sensitivity';
+export const SEEK_SENSITIVITY_CHANGE = 'crayon-seek-sensitivity-change';
+const seekSensitivities = [
+  { value: 0.5, label: '低', tooltip: '滑动同等距离跳转更少，适合精确定位' },
+  { value: 1, label: '标准', tooltip: '默认滑动灵敏度' },
+  { value: 1.5, label: '高', tooltip: '滑动同等距离跳转更多，适合快速定位' },
+] as const;
+
+export function normalizeSeekSensitivity(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0.1 && number <= 10 ? number : 1;
+}
+
+export function currentSeekSensitivity() {
+  try { return normalizeSeekSensitivity(localStorage.getItem(SEEK_SENSITIVITY_KEY)); }
+  catch { return 1; }
+}
+
+/** Swipe-to-seek sensitivity, persisted for the current browser. */
+export function seekSensitivitySetting(): Setting {
+  const current = seekSensitivities.find(item => item.value === currentSeekSensitivity()) || seekSensitivities[1];
+  return {
+    name: 'crayonSeekSensitivity', html: '滑动调进度灵敏度', tooltip: current.label,
+    selector: seekSensitivities.map(item => ({
+      html: item.label, value: item.value, default: item.value === current.value, tooltip: item.tooltip,
+    })),
+    onSelect(item) {
+      const selected = seekSensitivities.find(option => option.value === Number(item.value)) || seekSensitivities[1];
+      try { localStorage.setItem(SEEK_SENSITIVITY_KEY, String(selected.value)); } catch { /* Storage is optional. */ }
+      this.template.$player.dispatchEvent(new CustomEvent(SEEK_SENSITIVITY_CHANGE, { detail: selected.value }));
+      return `滑动灵敏度：${selected.label}`;
+    },
+  };
 }
 
 const clamp = (value: number, min: number, max: number) =>
@@ -32,6 +69,7 @@ export function attachGestures(art: Artplayer, options: GestureOptions = {}) {
   const video = art.video;
   const seekSeconds = options.seekSeconds ?? 10;
   const holdRate = options.holdRate ?? 2;
+  let seekSensitivity = normalizeSeekSensitivity(options.seekSensitivity ?? currentSeekSensitivity());
   const originalTouchAction = video.style.touchAction;
   const originalTranslate = video.style.translate || '';
   const originalScale = video.style.scale || '';
@@ -163,7 +201,7 @@ export function attachGestures(art: Artplayer, options: GestureOptions = {}) {
     }
     if (active.direction === 'horizontal') {
       const width = (art.isRotate ? rect.height : rect.width) || 1;
-      seek(active.time + dx / width * Math.min(art.duration || 0, 300));
+      seek(active.time + dx / width * Math.min(art.duration || 0, 300) * seekSensitivity);
     } else {
       const height = (art.isRotate ? rect.width : rect.height) || 1;
       const delta = -dy / (height * 0.8);
@@ -220,6 +258,8 @@ export function attachGestures(art: Artplayer, options: GestureOptions = {}) {
   };
   const context = (event: Event) => { if (active && picture(event.target)) stop(event); };
   const visibility = () => { if (document.hidden) cancel(); };
+  const sensitivity = (event: Event) => { seekSensitivity = normalizeSeekSensitivity((event as CustomEvent).detail); };
+  root.addEventListener(SEEK_SENSITIVITY_CHANGE, sensitivity);
   root.addEventListener('touchstart', start, { capture: true, passive: false });
   root.addEventListener('touchmove', move, { capture: true, passive: false });
   window.addEventListener('touchend', end, { capture: true, passive: false });
@@ -236,6 +276,7 @@ export function attachGestures(art: Artplayer, options: GestureOptions = {}) {
     cancel();
     video.style.touchAction = originalTouchAction;
     resetView();
+    root.removeEventListener(SEEK_SENSITIVITY_CHANGE, sensitivity);
     root.removeEventListener('touchstart', start, true);
     root.removeEventListener('touchmove', move, true);
     window.removeEventListener('touchend', end, true);

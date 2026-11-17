@@ -18,8 +18,12 @@ export function attachSourceSelector(art: Artplayer, sources: PlaybackSource[], 
   if (!routes.length) return () => {};
   const root = document.createElement('div'); root.dataset.crayonSources = '';
   const trigger = document.createElement('button'); trigger.type = 'button';
-  trigger.setAttribute('aria-label', '选择播放线路'); trigger.setAttribute('aria-haspopup', 'menu'); trigger.setAttribute('aria-expanded', 'false');
-  const menu = document.createElement('div'); menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', '播放线路'); menu.hidden = true;
+  trigger.setAttribute('aria-label', '选择播放线路'); trigger.setAttribute('aria-haspopup', 'dialog'); trigger.setAttribute('aria-expanded', 'false');
+  // The drawer is a dialog; the actual radio choices stay in a nested menu.
+  const panel = document.createElement('section'); panel.dataset.crayonSourcePanel = ''; panel.setAttribute('aria-label', '换源');
+  const menu = document.createElement('div'); menu.dataset.crayonSourceMenu = '';
+  menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', '播放线路');
+  panel.append(menu);
   const unavailableCount = routes.filter(route => route.available === false).length;
   if (unavailableCount) {
     const status = document.createElement('p'); status.dataset.crayonSourceStatus = ''; status.setAttribute('role', 'status');
@@ -51,20 +55,26 @@ export function attachSourceSelector(art: Artplayer, sources: PlaybackSource[], 
     trigger.title = (routes[selected]?.name || '暂无可用线路') + (unavailableCount ? ' · ' + unavailableCount + ' 条暂不可用，点击查看原因' : '');
     buttons.forEach((button, index) => button.setAttribute('aria-checked', String(index === selected)));
   }
-  const controls = attachControlPanel(art, { name: controlName, position: 'right', root, trigger, panel: menu });
+  const controls = attachControlPanel(art, { name: controlName, position: 'right', root, trigger, panel, title: '换源' });
   const key = (event: KeyboardEvent) => {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault(); event.stopPropagation();
-      if (menu.hidden) { controls.open(); return; }
-      const enabled = buttons.filter(button => !button.disabled);
-      if (!enabled.length) return;
-      const index = enabled.indexOf(document.activeElement as HTMLButtonElement);
-      enabled[(index + (event.key === 'ArrowDown' ? 1 : enabled.length - 1)) % enabled.length].focus();
-    }
+    if (!['ArrowDown', 'ArrowUp'].includes(event.key) || panel.hidden) return;
+    event.preventDefault(); event.stopPropagation();
+    const enabled = buttons.filter(button => !button.disabled);
+    if (!enabled.length) return;
+    const down = event.key === 'ArrowDown';
+    const index = enabled.indexOf(document.activeElement as HTMLButtonElement);
+    const next = index < 0 ? (down ? 0 : enabled.length - 1) : (index + (down ? 1 : enabled.length - 1)) % enabled.length;
+    enabled[next].focus();
   };
   root.addEventListener('keydown', key);
+  menu.addEventListener('keydown', key);
   update();
-  const cleanup = () => { root.removeEventListener('keydown', key); art.off('destroy', cleanup); controls.destroy(); };
+  const cleanup = () => {
+    root.removeEventListener('keydown', key);
+    menu.removeEventListener('keydown', key);
+    art.off('destroy', cleanup);
+    controls.destroy();
+  };
   art.on('destroy', cleanup);
   return cleanup;
 }
