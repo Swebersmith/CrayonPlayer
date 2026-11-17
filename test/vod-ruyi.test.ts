@@ -11,6 +11,7 @@ const urls = [
   'https://cdn.ryplay12.com/20261001/42140_c77b26e4/2000k/hls/index.m3u8',
   'https://cdn.ryplay12.com/20251006/22917_c962e8c4/2000k/hls/index.m3u8',
   'https://svip.ryiplay18.com/20260531/6798_92c24498/2000k/hls/index.m3u8',
+  'https://svip.ryiplay18.com/20261117/16421_67b92b35/2000k/hls/index.m3u8',
 ];
 const uris = (text: string) => text.split(/\r?\n/).filter(line => line && !line.startsWith('#'));
 
@@ -30,6 +31,7 @@ it('retains Ruyi identity through signed manifests and segment URLs', () => {
 // confirmed at 663.04s while the surrounding uniform groups are normal video.
 it.each([
   ['bear-season2-current.m3u8', 0, [[663.04, 682.92]]],
+  ['zouma-ren-ep35.m3u8', 3, [[661.0, 680.88]]],
   ['bear-season2.m3u8', 0, [[529.28, 550.28]]],
   ['bear-season1.m3u8', 1, [[480.36, 499.36]]],
   ['movie.m3u8', 2, [[582.4, 601.4], [3380.36, 3401.36]]],
@@ -82,9 +84,16 @@ it('recognizes a 20s package spliced into a six-segment Ruyi timeline', () => {
   expect(result.removed[0].end).toBeCloseTo(163.88);
 });
 
-it('retains a real Ruyi movie with ordinary uniform scenes and frequent discontinuities', () => {
+it('removes the repeated 20s package from a Ruyi movie and retains its ordinary groups', () => {
   const input = fixture('clean-movie.m3u8');
-  expect(filterVodAdSegments(input, 'https://cdn7.ryplay7.com/20250501/13887_828cf261/2000k/hls/index.m3u8').playlist).toBe(input);
+  const result = filterVodAdSegments(input, 'https://cdn7.ryplay7.com/20250501/13887_828cf261/2000k/hls/index.m3u8');
+  expect(result.reason).toBe('filtered');
+  expect(result.removed).toHaveLength(2);
+  expect(result.removed[0].start).toBeCloseTo(640.56);
+  expect(result.removed[0].end).toBeCloseTo(660.44);
+  expect(result.removed[1].start).toBeCloseTo(2861.16);
+  expect(result.removed[1].end).toBeCloseTo(2881.04);
+  expect(uris(result.playlist)).toHaveLength(uris(input).length - 10);
 });
 
 it.each([

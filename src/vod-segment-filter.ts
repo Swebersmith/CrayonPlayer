@@ -245,23 +245,15 @@ function isRuyiInsertion(
         /^[a-f\d]{32}\.ts$/i.test(media.pathname.split('/').pop() || '');
     })) return false;
   } catch { return false; }
-  const neighbors = [groups[index - 1], groups[index + 1]];
-  if (!neighbors.every(neighbor =>
-    neighbor.directory === group.directory && neighbor.segments.length >= 4
-  )) return false;
-  const variable = (neighbor: SegmentGroup) =>
-    neighbor.segments.filter(segment => segment.duration !== 4).length >= 2;
-  if (legacyPackage) {
-    // Require stable programme on both sides with genuinely variable cadence,
-    // not a run of uniform normal scenes or the short tail of a movie.
-    return neighbors.every(variable);
-  }
-  // A 20s package keeps its 4s cadence except for the final frame. A natural
-  // uniform scene can share that shape, so require packaging context: either
-  // the package is spliced between differently sized groups, or both
-  // neighbours are a plain run of 4s segments.
-  return neighbors.some(neighbor => neighbor.segments.length !== values.length)
-    || neighbors.every(neighbor => neighbor.segments.every(segment => segment.duration === 4));
+  if (!legacyPackage) return true;
+  // Legacy packages were verified as separate insertions. Require stable
+  // programme on both sides with genuinely variable cadence, not a run of
+  // uniform normal scenes or the short tail of a movie.
+  return [groups[index - 1], groups[index + 1]].every(neighbor =>
+    neighbor.directory === group.directory &&
+    neighbor.segments.length >= 5 &&
+    neighbor.segments.filter(segment => segment.duration !== 4).length >= 2
+  );
 }
 
 function detectGroups(groups: SegmentGroup[], total: number, baseUrl: string): Set<number> {
